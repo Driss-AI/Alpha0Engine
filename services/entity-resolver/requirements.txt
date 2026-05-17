@@ -1,0 +1,8 @@
+rapidfuzz==3.9.0
+psycopg2-binary==2.9.9
+sqlmodel==0.0.19
+redis==5.0.4
+python-dotenv==1.0.1
+schedule==1.2.2
+tldextract==5.1.2
+asyncpg==0.29.0
