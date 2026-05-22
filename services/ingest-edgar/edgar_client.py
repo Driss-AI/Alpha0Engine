@@ -6,7 +6,9 @@ import os, logging, requests, re
 from typing import List, Dict, Any, Optional
 
 log = logging.getLogger(__name__)
+
 EDGAR_EFTS = "https://efts.sec.gov/LATEST/search-index"
+EDGAR_FULL_TEXT = "https://efts.sec.gov/LATEST/search-index"
 EDGAR_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 
 
@@ -17,39 +19,81 @@ class EdgarClient:
         self.session.headers.update({"User-Agent": self.user_agent, "Accept-Encoding": "gzip, deflate"})
 
     def get_form_d_filings(self, date_str: str) -> List[Dict[str, Any]]:
-        params = {"q": "", "forms": "D", "dateRange": "custom", "startdt": date_str, "enddt": date_str}
+        """Use EDGAR full-text search API to find Form D filings."""
         try:
-            resp = self.session.get(EDGAR_EFTS, params=params, timeout=30)
+            # Use the correct EDGAR full-text search endpoint
+            url = "https://efts.sec.gov/LATEST/search-index"
+            params = {
+                "q": "",
+                "forms": "D",
+                "dateRange": "custom",
+                "startdt": date_str,
+                "enddt": date_str,
+            }
+            resp = self.session.get(url, params=params, timeout=30)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
             log.error(f"EDGAR EFTS error: {e}")
             return []
+
         filings = []
         for hit in data.get("hits", {}).get("hits", []):
             src = hit.get("_source", {})
-            accession = hit.get("_id", "").replace("-", "")
-            cik = str(src.get("entity_id", "")).zfill(10)
-            acc_fmt = f"{accession[:10]}-{accession[10:12]}-{accession[12:]}"
+            file_num = src.get("file_num", "")
+            entity_name = src.get("entity_name", "")
+            file_date = src.get("file_date", date_str)
+
+            # Build the filing URL from the file path
+            file_path = src.get("file_path", "")
+            if not file_path:
+                continue
+
             filings.append({
-                "accession_number": accession, "cik": cik,
-                "company_name": src.get("entity_name", ""),
-                "file_date": src.get("file_date", date_str),
-                "edgar_url": f"{EDGAR_ARCHIVES}/{cik}/{acc_fmt}",
+                "accession_number": hit.get("_id", "").replace("-", ""),
+                "cik": str(src.get("entity_id", "")).zfill(10),
+                "company_name": entity_name,
+                "file_date": file_date,
+                "file_path": file_path,
+                "edgar_url": f"https://www.sec.gov/Archives/{file_path}" if file_path else "",
             })
+
         return filings
 
     def download_filing(self, filing_url: str) -> Optional[str]:
+        """Download Form D XML directly."""
         if not filing_url:
             return None
         try:
-            resp = self.session.get(filing_url + "-index.htm", timeout=30)
+            # Try direct download first
+            resp = self.session.get(filing_url, timeout=30)
             resp.raise_for_status()
-            matches = re.findall(r'href="([^"]+\.xml)"', resp.text, re.IGNORECASE)
-            if not matches:
-                return None
-            xml_url = filing_url.rsplit("/", 1)[0] + "/" + matches[0]
-            return self.session.get(xml_url, timeout=30).text
+            content = resp.text
+
+            # Check if we got XML or HTML
+            if content.strip().startswith("<?xml") or "<edgarSubmission" in content:
+                return content
+
+            # If HTML, try to find the primary XML document link
+            xml_links = re.findall(r'href="([^"]*primary_doc\.xml[^"]*)"', content, re.IGNORECASE)
+            if not xml_links:
+                xml_links = re.findall(r'href="([^"]+\.xml)"', content, re.IGNORECASE)
+
+            if xml_links:
+                # Build absolute URL
+                base_url = filing_url.rsplit("/", 1)[0] if "/" in filing_url else filing_url
+                xml_url = xml_links[0]
+                if not xml_url.startswith("http"):
+                    xml_url = base_url + "/" + xml_url.lstrip("/")
+
+                xml_resp = self.session.get(xml_url, timeout=30)
+                xml_resp.raise_for_status()
+                if xml_resp.text.strip().startswith("<?xml") or "<edgarSubmission" in xml_resp.text:
+                    return xml_resp.text
+
+            log.warning(f"No XML found at {filing_url}")
+            return None
+
         except Exception as e:
             log.warning(f"Download failed {filing_url}: {e}")
             return None
