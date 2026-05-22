@@ -59,8 +59,8 @@ class ThemeDetector:
 
         # Run HDBSCAN clustering
         try:
-            import hdbscan
-            clusterer = hdbscan.HDBSCAN(
+            from sklearn.cluster import HDBSCAN
+            clusterer = HDBSCAN(
                 min_cluster_size=5,
                 min_samples=3,
                 metric="euclidean",
