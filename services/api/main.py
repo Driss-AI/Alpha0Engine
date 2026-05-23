@@ -1,6 +1,6 @@
 """
-Alpha0Engine — FastAPI Gateway
-All client-facing endpoints. Mobile app calls this API.
+Alpha0Engine — FastAPI Gateway v0.2.1
+All client-facing endpoints.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from shared.clients.postgres import create_db_and_tables
-from routers import health, entities, signals, themes, ipo
+from routers import health, entities, signals, themes, ipo, dashboard
 
 
 @asynccontextmanager
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Alpha0Engine API",
     description="Asymmetric return screening engine — pre-IPO to early public market intelligence.",
-    version="0.2.0",
+    version="0.2.1",
     lifespan=lifespan,
 )
 
@@ -37,6 +37,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(dashboard.router, prefix="/api/v1")
 app.include_router(entities.router, prefix="/api/v1")
 app.include_router(signals.router, prefix="/api/v1")
 app.include_router(themes.router, prefix="/api/v1")

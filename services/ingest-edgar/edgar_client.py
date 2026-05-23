@@ -1,104 +1,105 @@
 """
-EDGAR API Client — EFTS search + filing download.
-Fair Access: User-Agent required, max 10 req/sec.
+EDGAR API Client — uses multiple fallback methods for Form D filings.
+Method 1: EFTS full-text search
+Method 2: Company search (Atom feed)
+Method 3: Daily index files
 """
 import os, logging, requests, re
 from typing import List, Dict, Any, Optional
+from datetime import datetime
 
 log = logging.getLogger(__name__)
-
-EDGAR_EFTS = "https://efts.sec.gov/LATEST/search-index"
-EDGAR_FULL_TEXT = "https://efts.sec.gov/LATEST/search-index"
-EDGAR_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 
 
 class EdgarClient:
     def __init__(self):
         self.user_agent = os.environ.get("EDGAR_USER_AGENT", "Alpha0Engine contact@alpha0engine.com")
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": self.user_agent, "Accept-Encoding": "gzip, deflate"})
+        self.session.headers.update({
+            "User-Agent": self.user_agent,
+            "Accept": "application/json, text/html, application/atom+xml",
+            "Accept-Encoding": "gzip, deflate",
+        })
 
     def get_form_d_filings(self, date_str: str) -> List[Dict[str, Any]]:
-        """Use EDGAR full-text search API to find Form D filings."""
-        try:
-            # Use the correct EDGAR full-text search endpoint
-            url = "https://efts.sec.gov/LATEST/search-index"
-            params = {
-                "q": "",
-                "forms": "D",
-                "dateRange": "custom",
-                "startdt": date_str,
-                "enddt": date_str,
-            }
-            resp = self.session.get(url, params=params, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            log.error(f"EDGAR EFTS error: {e}")
-            return []
-
         filings = []
-        for hit in data.get("hits", {}).get("hits", []):
-            src = hit.get("_source", {})
-            file_num = src.get("file_num", "")
-            entity_name = src.get("entity_name", "")
-            file_date = src.get("file_date", date_str)
 
-            # Build the filing URL from the file path
-            file_path = src.get("file_path", "")
-            if not file_path:
-                continue
+        # Method 1: EFTS full-text search
+        try:
+            resp = self.session.get(
+                "https://efts.sec.gov/LATEST/search-index",
+                params={"q": "", "forms": "D", "dateRange": "custom", "startdt": date_str, "enddt": date_str},
+                timeout=30
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                for hit in data.get("hits", {}).get("hits", []):
+                    src = hit.get("_source", {})
+                    fp = src.get("file_path", "")
+                    filings.append({
+                        "accession_number": hit.get("_id", "").replace("-", ""),
+                        "cik": str(src.get("entity_id", "")).zfill(10),
+                        "company_name": src.get("entity_name", ""),
+                        "file_date": src.get("file_date", date_str),
+                        "edgar_url": f"https://www.sec.gov/Archives/{fp}" if fp else "",
+                    })
+                if filings:
+                    log.info(f"EFTS found {len(filings)} Form D filings")
+                    return filings
+        except Exception as e:
+            log.warning(f"EFTS failed: {e}")
 
-            filings.append({
-                "accession_number": hit.get("_id", "").replace("-", ""),
-                "cik": str(src.get("entity_id", "")).zfill(10),
-                "company_name": entity_name,
-                "file_date": file_date,
-                "file_path": file_path,
-                "edgar_url": f"https://www.sec.gov/Archives/{file_path}" if file_path else "",
-            })
+        # Method 2: Daily index file
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            qtr = (dt.month - 1) // 3 + 1
+            idx_url = f"https://www.sec.gov/Archives/edgar/daily-index/{dt.year}/QTR{qtr}/master{dt.strftime('%Y%m%d')}.idx"
+            resp = self.session.get(idx_url, timeout=30)
+            if resp.status_code == 200:
+                for line in resp.text.splitlines():
+                    parts = line.split("|")
+                    if len(parts) >= 5 and parts[2].strip() in ("D", "D/A"):
+                        filings.append({
+                            "accession_number": parts[4].strip().split("/")[-1].replace("-","").replace(".txt",""),
+                            "cik": parts[0].strip().zfill(10),
+                            "company_name": parts[1].strip(),
+                            "file_date": parts[3].strip() or date_str,
+                            "edgar_url": f"https://www.sec.gov/Archives/{parts[4].strip()}",
+                        })
+                if filings:
+                    log.info(f"Daily index found {len(filings)} Form D filings")
+                    return filings
+        except Exception as e:
+            log.warning(f"Daily index failed: {e}")
 
+        log.info(f"No Form D filings found for {date_str} (may be weekend/holiday)")
         return filings
 
     def download_filing(self, filing_url: str) -> Optional[str]:
-        """Download Form D XML directly."""
         if not filing_url:
             return None
         try:
-            # Try direct download first
             resp = self.session.get(filing_url, timeout=30)
             resp.raise_for_status()
             content = resp.text
-
-            # Check if we got XML or HTML
-            if content.strip().startswith("<?xml") or "<edgarSubmission" in content:
+            if "<edgarSubmission" in content or "<?xml" in content[:100]:
                 return content
-
-            # If HTML, try to find the primary XML document link
+            # HTML index — find XML link
             xml_links = re.findall(r'href="([^"]*primary_doc\.xml[^"]*)"', content, re.IGNORECASE)
             if not xml_links:
                 xml_links = re.findall(r'href="([^"]+\.xml)"', content, re.IGNORECASE)
-
             if xml_links:
-                # Build absolute URL
-                base_url = filing_url.rsplit("/", 1)[0] if "/" in filing_url else filing_url
-                xml_url = xml_links[0]
-                if not xml_url.startswith("http"):
-                    xml_url = base_url + "/" + xml_url.lstrip("/")
-
+                base = filing_url.rsplit("/", 1)[0]
+                xml_url = xml_links[0] if xml_links[0].startswith("http") else base + "/" + xml_links[0].lstrip("/")
                 xml_resp = self.session.get(xml_url, timeout=30)
-                xml_resp.raise_for_status()
-                if xml_resp.text.strip().startswith("<?xml") or "<edgarSubmission" in xml_resp.text:
+                if "<edgarSubmission" in xml_resp.text or "<?xml" in xml_resp.text[:100]:
                     return xml_resp.text
-
-            log.warning(f"No XML found at {filing_url}")
             return None
-
         except Exception as e:
             log.warning(f"Download failed {filing_url}: {e}")
             return None
 
-    def archive_to_r2(self, parsed: Dict, raw_xml: str, date_str: str) -> None:
+    def archive_to_r2(self, parsed, raw_xml, date_str):
         try:
             import asyncio
             from shared.clients.r2 import r2_key, upload
@@ -107,10 +108,9 @@ class EdgarClient:
         except Exception as e:
             log.warning(f"R2 archive failed (non-fatal): {e}")
 
-    def write_signal(self, parsed: Dict) -> None:
+    def write_signal(self, parsed):
         try:
             import asyncio
-            from datetime import datetime
             from shared.clients.postgres import AsyncSessionLocal
             from shared.schemas.signals import Signal
             signal = Signal(
@@ -128,7 +128,7 @@ class EdgarClient:
         except Exception as e:
             log.error(f"DB write failed: {e}")
 
-    def publish_to_stream(self, parsed: Dict) -> None:
+    def publish_to_stream(self, parsed):
         try:
             import asyncio
             from shared.clients.redis_client import publish_signal
