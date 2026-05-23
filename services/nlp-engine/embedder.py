@@ -65,7 +65,7 @@ class Embedder:
                 try:
                     await session.execute(text(
                         "INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding, created_at) "
-                        "VALUES (:id, :eid, :txt, :src, :sid, :emb::vector, NOW()) "
+                        "VALUES (:id, :eid, :txt, :src, :sid, CAST(:emb AS vector), NOW()) "
                         "ON CONFLICT (id) DO NOTHING"
                     ), {
                         "id": str(uuid.uuid4()), "eid": eid,
