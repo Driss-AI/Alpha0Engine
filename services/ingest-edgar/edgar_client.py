@@ -29,17 +29,22 @@ class EdgarClient:
             )
             if resp.status_code == 200:
                 data = resp.json()
+                # DEBUG: log first hit structure
+                if data.get("hits", {}).get("hits"):
+                    first = data["hits"]["hits"][0]
+                    log.info(f"EFTS debug: _id={first.get('_id')}, _source keys={list(first.get('_source', {}).keys())}")
+                    log.info(f"EFTS debug: _source={dict(list(first.get('_source', {}).items())[:8])}")
                 for hit in data.get("hits", {}).get("hits", []):
                     src = hit.get("_source", {})
                     acc = hit.get("_id", "")
                     if not acc:
                         continue
 
-                    # Extract CIK — try multiple field names
+                    # Extract CIK — handle int 0, None, etc.
                     cik = ""
-                    for field in ("entity_id", "cik", "CIK"):
+                    for field in ("entity_id", "cik", "CIK", "ciks"):
                         val = src.get(field)
-                        if val:
+                        if val is not None and str(val).strip() and str(val).strip() != "0":
                             cik = str(val).strip()
                             break
 
