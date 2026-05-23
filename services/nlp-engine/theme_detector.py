@@ -116,7 +116,7 @@ class ThemeDetector:
         await self._save_themes(themes)
         return themes
 
-    def _analyze_clusters(self, labels, metadata) -> List[Dict]:
+    async def _analyze_clusters(self, labels, metadata) -> List[Dict]:
         cluster_ids = set(labels)
         cluster_ids.discard(-1)
         now = datetime.utcnow()
@@ -151,8 +151,7 @@ class ThemeDetector:
                 "status": "emerging" if velocity > 0.5 else "active" if velocity > 0.2 else "cooling",
             })
 
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(self._save_themes(themes))
+        await self._save_themes(themes)
         return themes
 
     async def _save_themes(self, themes):

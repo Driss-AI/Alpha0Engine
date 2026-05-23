@@ -1,6 +1,6 @@
 """
 EDGAR API Client — Form D filing ingest.
-Uses EFTS search, constructs filing URLs from CIK + accession number.
+Uses EFTS search with proper URL construction from accession numbers.
 """
 import os, logging, requests, re
 from typing import List, Dict, Any, Optional
@@ -31,26 +31,24 @@ class EdgarClient:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                for hit in data.get("hits", {}).get("hits", []):
+                hits = data.get("hits", {}).get("hits", [])
+                for hit in hits:
                     src = hit.get("_source", {})
                     raw_id = hit.get("_id", "")
                     cik = str(src.get("entity_id", "")).strip()
                     if not cik or not raw_id:
                         continue
 
-                    # Build URL from CIK and accession number
-                    # _id format: "0001234567-26-001234" or similar
-                    acc_clean = raw_id.replace("-", "")
-                    # Format: 000123456726001234 -> 0001234567-26-001234
-                    if len(acc_clean) >= 18:
-                        acc_fmt = f"{acc_clean[:10]}-{acc_clean[10:12]}-{acc_clean[12:]}"
-                    else:
-                        acc_fmt = raw_id
-
-                    edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_fmt}/"
+                    # Build proper EDGAR URL
+                    # raw_id is typically: "0001234567-26-001234"
+                    # URL format: /Archives/edgar/data/{CIK}/{accession-with-dashes}/
+                    acc_dashes = raw_id  # keep dashes
+                    acc_nodashes = raw_id.replace("-", "")
+                    edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_dashes}/"
 
                     filings.append({
-                        "accession_number": acc_clean,
+                        "accession_number": acc_nodashes,
+                        "accession_formatted": acc_dashes,
                         "cik": cik.zfill(10),
                         "company_name": src.get("entity_name", ""),
                         "file_date": src.get("file_date", date_str),
@@ -58,7 +56,9 @@ class EdgarClient:
                     })
 
                 if filings:
-                    log.info(f"EFTS found {len(filings)} Form D filings")
+                    log.info(f"EFTS found {len(filings)} filings. Sample URL: {filings[0]['edgar_url']}")
+                else:
+                    log.info(f"EFTS returned {len(hits)} hits but no valid filings")
         except Exception as e:
             log.warning(f"EFTS search failed: {e}")
 
@@ -100,29 +100,40 @@ class EdgarClient:
         try:
             # Get the filing index page
             resp = self.session.get(filing_url, timeout=30)
+            if resp.status_code == 404:
+                log.debug(f"404: {filing_url}")
+                return None
             resp.raise_for_status()
             content = resp.text
 
-            # Direct XML
+            # Direct XML check
             if "<edgarSubmission" in content or ("<formD" in content.lower() and "<?xml" in content[:200]):
                 return content
 
-            # HTML index page — find primary_doc.xml or any .xml
-            xml_links = re.findall(r'href="([^"]*primary_doc\.xml)"', content, re.IGNORECASE)
-            if not xml_links:
-                xml_links = re.findall(r'href="([^"]*\.xml)"', content, re.IGNORECASE)
-            if xml_links:
-                xml_filename = xml_links[0]
-                if not xml_filename.startswith("http"):
-                    xml_url = filing_url.rstrip("/") + "/" + xml_filename.lstrip("/")
-                else:
-                    xml_url = xml_filename
-                xml_resp = self.session.get(xml_url, timeout=30)
-                xml_resp.raise_for_status()
-                if "edgarSubmission" in xml_resp.text or "<?xml" in xml_resp.text[:200]:
-                    return xml_resp.text
+            # HTML index page — find XML link
+            # Primary doc patterns: primary_doc.xml, *-primary_doc.xml, formD.xml
+            xml_patterns = [
+                r'href="([^"]*primary_doc[^"]*\.xml)"',
+                r'href="([^"]*formD[^"]*\.xml)"',
+                r'href="([^"]*\.xml)"',
+            ]
+            for pattern in xml_patterns:
+                xml_links = re.findall(pattern, content, re.IGNORECASE)
+                if xml_links:
+                    xml_filename = xml_links[0]
+                    if not xml_filename.startswith("http"):
+                        xml_url = filing_url.rstrip("/") + "/" + xml_filename.lstrip("/")
+                    else:
+                        xml_url = xml_filename
+                    try:
+                        xml_resp = self.session.get(xml_url, timeout=30)
+                        xml_resp.raise_for_status()
+                        if "edgarSubmission" in xml_resp.text or "<?xml" in xml_resp.text[:200]:
+                            return xml_resp.text
+                    except Exception:
+                        continue
 
-            log.debug(f"No XML at {filing_url}")
+            log.debug(f"No Form D XML found at {filing_url}")
             return None
         except Exception as e:
             log.debug(f"Download error {filing_url}: {e}")

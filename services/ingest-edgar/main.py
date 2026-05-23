@@ -40,7 +40,7 @@ def run_daily_ingest():
         except Exception as e:
             log.error(f"Error {filing.get('accession_number')}: {e}")
             errors += 1
-    log.info(f"Complete. Success: {success} Errors: {errors}")
+    log.info(f"Complete. Success: {success} Errors: {errors} Skipped (no XML): {len(filings) - success - errors}")
 
 
 def main():
