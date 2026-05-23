@@ -19,8 +19,8 @@ class ThemeDetector:
         # Check if embeddings exist
         try:
             async with AsyncSessionLocal() as session:
-                count_result = await session.exec(text("SELECT COUNT(*) FROM embeddings"))
-                count = count_result.one()[0]
+                count_result = await session.execute(text("SELECT COUNT(*) FROM embeddings"))
+                count = count_result.scalar()
                 if count < 20:
                     log.info(f"Only {count} embeddings — need 20+ for clustering. Skipping.")
                     return []
@@ -28,25 +28,25 @@ class ThemeDetector:
                 # Check if vector column exists
                 has_vector = False
                 try:
-                    await session.exec(text("SELECT embedding FROM embeddings LIMIT 1"))
+                    await session.execute(text("SELECT embedding FROM embeddings LIMIT 1"))
                     has_vector = True
                 except Exception:
                     await session.rollback()
 
                 if has_vector:
-                    result = await session.exec(text("""
+                    result = await session.execute(text("""
                         SELECT id, entity_id, text, source, embedding::text, created_at
                         FROM embeddings WHERE embedding IS NOT NULL
                         ORDER BY created_at DESC LIMIT 10000
                     """))
                 else:
                     # Fallback: cluster by text without vectors
-                    result = await session.exec(text("""
+                    result = await session.execute(text("""
                         SELECT id, entity_id, text, source, NULL as embedding, created_at
                         FROM embeddings
                         ORDER BY created_at DESC LIMIT 10000
                     """))
-                rows = result.all()
+                rows = result.fetchall()
         except Exception as e:
             log.warning(f"Cannot query embeddings: {e}")
             return []
@@ -165,7 +165,7 @@ class ThemeDetector:
                 for t in themes:
                     import json
                     tid = str(uuid.uuid4())
-                    await session.exec(text("""
+                    await session.execute(text("""
                         INSERT INTO themes (id, name, keywords, velocity_score, entity_count, signal_count, status, created_at, updated_at)
                         VALUES (:id, :name, :keywords, :vel, :ec, :sc, :status, NOW(), NOW())
                     """), {"id": tid, "name": t["name"], "keywords": json.dumps(t["keywords"]),

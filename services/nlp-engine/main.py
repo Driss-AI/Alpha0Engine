@@ -20,7 +20,7 @@ async def init_db():
         async with AsyncSessionLocal() as session:
             # Try to enable pgvector — may fail if not installed
             try:
-                await session.exec(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 await session.commit()
                 log.info("pgvector extension enabled")
             except Exception as e:
@@ -28,7 +28,7 @@ async def init_db():
                 log.warning(f"pgvector not available (will use basic clustering): {e}")
 
             # Create tables that SQLModel auto-create might miss
-            await session.exec(text("""
+            await session.execute(text("""
                 CREATE TABLE IF NOT EXISTS themes (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -43,7 +43,7 @@ async def init_db():
                     updated_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            await session.exec(text("""
+            await session.execute(text("""
                 CREATE TABLE IF NOT EXISTS theme_entities (
                     id TEXT PRIMARY KEY,
                     theme_id TEXT NOT NULL,
@@ -52,7 +52,7 @@ async def init_db():
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            await session.exec(text("""
+            await session.execute(text("""
                 CREATE TABLE IF NOT EXISTS embeddings (
                     id TEXT PRIMARY KEY,
                     entity_id TEXT NOT NULL,
@@ -66,7 +66,7 @@ async def init_db():
             """))
             # Add vector column only if pgvector is available
             try:
-                await session.exec(text("""
+                await session.execute(text("""
                     ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(384)
                 """))
             except Exception:

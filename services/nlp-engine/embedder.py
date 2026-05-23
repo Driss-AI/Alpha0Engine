@@ -29,8 +29,8 @@ class Embedder:
         async with AsyncSessionLocal() as session:
             # Get already-embedded source_ids
             try:
-                existing = await session.exec(text("SELECT source_id FROM embeddings WHERE source_id IS NOT NULL"))
-                existing_ids = set(r[0] for r in existing.all())
+                existing = await session.execute(text("SELECT source_id FROM embeddings WHERE source_id IS NOT NULL"))
+                existing_ids = set(r[0] for r in existing.fetchall())
             except Exception:
                 existing_ids = set()
 
@@ -63,7 +63,7 @@ class Embedder:
                 vec_str = "[" + ",".join(str(float(v)) for v in vec) + "]"
                 eid = sig.entity_id if sig.entity_id != "UNRESOLVED" else "unknown"
                 try:
-                    await session.exec(text(
+                    await session.execute(text(
                         "INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding, created_at) "
                         "VALUES (:id, :eid, :txt, :src, :sid, :emb::vector, NOW()) "
                         "ON CONFLICT (id) DO NOTHING"
@@ -78,7 +78,7 @@ class Embedder:
                     log.warning(f"Embed insert failed: {e}")
                     # If vector insert fails, try without vector
                     try:
-                        await session.exec(text(
+                        await session.execute(text(
                             "INSERT INTO embeddings (id, entity_id, text, source, source_id, created_at) "
                             "VALUES (:id, :eid, :txt, :src, :sid, NOW()) "
                             "ON CONFLICT (id) DO NOTHING"
@@ -101,7 +101,7 @@ class Embedder:
 
         async with AsyncSessionLocal() as session:
             try:
-                await session.exec(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await session.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 await session.commit()
             except Exception:
                 await session.rollback()
@@ -109,7 +109,7 @@ class Embedder:
 
             # Drop and recreate if vector column is missing
             try:
-                await session.exec(text("SELECT embedding FROM embeddings LIMIT 1"))
+                await session.execute(text("SELECT embedding FROM embeddings LIMIT 1"))
                 await session.commit()
                 log.info("Embeddings table with vector column exists")
             except Exception:
@@ -117,8 +117,8 @@ class Embedder:
                 # Table exists without vector column, or doesn't exist — recreate
                 log.info("Recreating embeddings table with vector column...")
                 try:
-                    await session.exec(text("DROP TABLE IF EXISTS embeddings"))
-                    await session.exec(text("""
+                    await session.execute(text("DROP TABLE IF EXISTS embeddings"))
+                    await session.execute(text("""
                         CREATE TABLE embeddings (
                             id TEXT PRIMARY KEY,
                             entity_id TEXT NOT NULL,
@@ -131,15 +131,15 @@ class Embedder:
                             created_at TIMESTAMP DEFAULT NOW()
                         )
                     """))
-                    await session.exec(text("CREATE INDEX IF NOT EXISTS ix_emb_entity ON embeddings(entity_id)"))
-                    await session.exec(text("CREATE INDEX IF NOT EXISTS ix_emb_source ON embeddings(source)"))
+                    await session.execute(text("CREATE INDEX IF NOT EXISTS ix_emb_entity ON embeddings(entity_id)"))
+                    await session.execute(text("CREATE INDEX IF NOT EXISTS ix_emb_source ON embeddings(source)"))
                     await session.commit()
                     log.info("Embeddings table created with vector column")
                 except Exception as e:
                     await session.rollback()
                     log.warning(f"Could not create vector table: {e}. Creating without vectors.")
-                    await session.exec(text("DROP TABLE IF EXISTS embeddings"))
-                    await session.exec(text("""
+                    await session.execute(text("DROP TABLE IF EXISTS embeddings"))
+                    await session.execute(text("""
                         CREATE TABLE embeddings (
                             id TEXT PRIMARY KEY,
                             entity_id TEXT NOT NULL,
