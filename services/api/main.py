@@ -1,13 +1,15 @@
 """
 Alpha0Engine — FastAPI Gateway v0.2.1
-All client-facing endpoints.
+Serves API endpoints + web dashboard at root.
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -35,6 +37,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Dashboard at root
+DASHBOARD_HTML = Path(__file__).parent / "static" / "dashboard.html"
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def root():
+    """Serve the CEO dashboard."""
+    if DASHBOARD_HTML.exists():
+        return HTMLResponse(DASHBOARD_HTML.read_text())
+    return HTMLResponse("<h1>Alpha0Engine</h1><p>Dashboard loading...</p>")
 
 app.include_router(health.router)
 app.include_router(dashboard.router, prefix="/api/v1")
