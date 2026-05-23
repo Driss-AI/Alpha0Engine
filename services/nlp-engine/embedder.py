@@ -64,8 +64,8 @@ class Embedder:
                 eid = sig.entity_id if sig.entity_id != "UNRESOLVED" else "unknown"
                 try:
                     await session.execute(text(
-                        "INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding, created_at) "
-                        "VALUES (:id, :eid, :txt, :src, :sid, CAST(:emb AS vector), NOW()) "
+                        "INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding_model, dimensions, embedding, created_at) "
+                        "VALUES (:id, :eid, :txt, :src, :sid, 'all-MiniLM-L6-v2', 384, CAST(:emb AS vector), NOW()) "
                         "ON CONFLICT (id) DO NOTHING"
                     ), {
                         "id": str(uuid.uuid4()), "eid": eid,
@@ -79,8 +79,8 @@ class Embedder:
                     # If vector insert fails, try without vector
                     try:
                         await session.execute(text(
-                            "INSERT INTO embeddings (id, entity_id, text, source, source_id, created_at) "
-                            "VALUES (:id, :eid, :txt, :src, :sid, NOW()) "
+                            "INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding_model, dimensions, created_at) "
+                            "VALUES (:id, :eid, :txt, :src, :sid, 'all-MiniLM-L6-v2', 384, NOW()) "
                             "ON CONFLICT (id) DO NOTHING"
                         ), {"id": str(uuid.uuid4()), "eid": eid,
                             "txt": texts[i][:500], "src": sig.signal_type, "sid": sig.source_id})
