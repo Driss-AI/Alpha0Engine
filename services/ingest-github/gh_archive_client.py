@@ -88,3 +88,13 @@ class GitHubArchiveClient:
         if t == "MemberEvent": return 0.7
         if t == "ReleaseEvent": return 0.8
         return 0.2
+
+
+    def _publish_to_stream(self, signal_data):
+        """Publish to Redis stream for entity resolver."""
+        try:
+            import asyncio
+            from shared.clients.redis_client import publish_signal
+            asyncio.get_event_loop().run_until_complete(publish_signal(signal_data))
+        except Exception:
+            pass

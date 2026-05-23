@@ -36,7 +36,7 @@ class Embedder:
 
             result = await session.exec(
                 select(Signal)
-                .where(Signal.entity_id != "UNRESOLVED")
+                
                 .order_by(Signal.created_at.desc())
                 .limit(500)
             )
