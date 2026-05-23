@@ -1,21 +1,14 @@
 """
-Embedder
-========
-Generates sentence embeddings from signal text data.
-Uses all-MiniLM-L6-v2 (384 dims, fast, runs on CPU).
+Embedder — generates sentence embeddings from signal text.
+Uses all-MiniLM-L6-v2 (384 dims, CPU, fast).
 
-Sources embedded:
-  - Patent titles + abstracts (from USPTO signals)
-  - Form D company names + industry descriptions
-  - Academic paper titles (from citation signals, Module 2 future)
+Now processes ALL signal types, not just patents/form_d.
 """
 import logging
-import json
-from typing import List, Dict, Any
+from typing import List
 from sentence_transformers import SentenceTransformer
 
 log = logging.getLogger(__name__)
-
 MODEL_NAME = "all-MiniLM-L6-v2"
 BATCH_SIZE = 64
 
@@ -27,51 +20,58 @@ class Embedder:
         self.dimensions = 384
 
     async def embed_new_signals(self) -> int:
-        """Find signals without embeddings and generate them."""
         from shared.clients.postgres import AsyncSessionLocal
         from shared.schemas.signals import Signal
-        from shared.schemas.embeddings import Embedding
         from sqlmodel import select, text
+        import uuid
 
         async with AsyncSessionLocal() as session:
-            # Find signals that haven't been embedded yet
+            # Get signals that haven't been embedded yet
+            # Check which source_ids already have embeddings
+            try:
+                existing = await session.exec(text("SELECT source_id FROM embeddings WHERE source_id IS NOT NULL"))
+                existing_ids = set(r[0] for r in existing.all())
+            except Exception:
+                existing_ids = set()
+
             result = await session.exec(
                 select(Signal)
-                .where(Signal.signal_type.in_(["patent_grant", "patent_filing", "form_d"]))
                 .where(Signal.entity_id != "UNRESOLVED")
                 .order_by(Signal.created_at.desc())
                 .limit(500)
             )
             signals = result.all()
 
+        # Filter out already-embedded
+        signals = [s for s in signals if s.source_id not in existing_ids]
+
         if not signals:
             log.info("No new signals to embed")
             return 0
 
-        # Extract text from signals
         texts = []
         signal_refs = []
         for sig in signals:
-            text_content = self._extract_text(sig)
-            if text_content:
-                texts.append(text_content)
+            t = self._extract_text(sig)
+            if t and len(t) > 5:
+                texts.append(t)
                 signal_refs.append(sig)
 
         if not texts:
             return 0
 
-        # Generate embeddings in batches
         log.info(f"Generating embeddings for {len(texts)} texts...")
         all_embeddings = self.model.encode(texts, batch_size=BATCH_SIZE, show_progress_bar=False)
 
-        # Store in database
         stored = 0
         async with AsyncSessionLocal() as session:
-            # Ensure pgvector extension exists
-            await session.exec(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            await session.commit()
+            # Ensure pgvector + table exist
+            try:
+                await session.exec(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                await session.commit()
+            except Exception:
+                await session.rollback()
 
-            # Create embeddings table with vector column if not exists
             await session.exec(text("""
                 CREATE TABLE IF NOT EXISTS embeddings (
                     id TEXT PRIMARY KEY,
@@ -81,31 +81,34 @@ class Embedder:
                     source_id TEXT,
                     embedding_model TEXT DEFAULT 'all-MiniLM-L6-v2',
                     dimensions INTEGER DEFAULT 384,
-                    embedding vector(384),
                     created_at TIMESTAMP DEFAULT NOW()
                 )
             """))
-            await session.exec(text("""
-                CREATE INDEX IF NOT EXISTS ix_embeddings_entity ON embeddings(entity_id)
-            """))
+            try:
+                await session.exec(text("ALTER TABLE embeddings ADD COLUMN IF NOT EXISTS embedding vector(384)"))
+            except Exception:
+                await session.rollback()
             await session.commit()
 
             for i, (sig, vec) in enumerate(zip(signal_refs, all_embeddings)):
-                import uuid
                 vec_str = "[" + ",".join(str(float(v)) for v in vec) + "]"
-                await session.exec(text("""
-                    INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding, created_at)
-                    VALUES (:id, :entity_id, :text, :source, :source_id, :embedding::vector, NOW())
-                    ON CONFLICT (id) DO NOTHING
-                """), {
-                    "id": str(uuid.uuid4()),
-                    "entity_id": sig.entity_id,
-                    "text": texts[i][:500],
-                    "source": sig.signal_type,
-                    "source_id": sig.source_id,
-                    "embedding": vec_str,
-                })
-                stored += 1
+                try:
+                    await session.exec(text("""
+                        INSERT INTO embeddings (id, entity_id, text, source, source_id, embedding, created_at)
+                        VALUES (:id, :eid, :txt, :src, :sid, :emb::vector, NOW())
+                        ON CONFLICT (id) DO NOTHING
+                    """), {
+                        "id": str(uuid.uuid4()),
+                        "eid": sig.entity_id,
+                        "txt": texts[i][:500],
+                        "src": sig.signal_type,
+                        "sid": sig.source_id,
+                        "emb": vec_str,
+                    })
+                    stored += 1
+                except Exception as e:
+                    await session.rollback()
+                    log.debug(f"Embed insert error: {e}")
 
             await session.commit()
 
@@ -113,24 +116,34 @@ class Embedder:
         return stored
 
     def _extract_text(self, signal) -> str:
-        """Pull meaningful text from a signal's raw_data."""
         rd = signal.raw_data or {}
+        st = signal.signal_type
 
-        if signal.signal_type in ("patent_grant", "patent_filing"):
+        if st in ("patent_grant", "patent_filing"):
             title = rd.get("patent_title", "")
             assignee = rd.get("assignee_organization", "")
-            cpc = rd.get("cpc_group_id", "")
-            return f"{title} {assignee} {cpc}".strip()
+            return f"{title} {assignee}".strip()
 
-        elif signal.signal_type == "form_d":
+        elif st == "form_d":
             name = rd.get("company_name", "")
             industry = rd.get("industry_group", "")
-            state = rd.get("state_of_incorporation", "")
             amount = rd.get("total_offering_amount", "")
-            return f"{name} {industry} {state} raising {amount}".strip()
+            return f"{name} {industry} raising {amount}".strip()
 
-        return ""
+        elif st in ("github_commit", "github_star"):
+            repo = rd.get("repo", "")
+            org = rd.get("org", "")
+            event_type = rd.get("type", "")
+            return f"{org} {repo} {event_type}".strip()
 
-    def encode_query(self, query: str) -> List[float]:
-        """Encode a search query for semantic similarity search."""
-        return self.model.encode(query).tolist()
+        elif st == "crossover_filing":
+            fund = rd.get("fund_name", "") or rd.get("fund", "")
+            notes = signal.notes or ""
+            return f"13F {fund} {notes}".strip()
+
+        elif st == "job_posting":
+            actor = rd.get("actor", "")
+            repo = rd.get("repo", "")
+            return f"New contributor {actor} joined {repo}".strip()
+
+        return signal.notes or ""
