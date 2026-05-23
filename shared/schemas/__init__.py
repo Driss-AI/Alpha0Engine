@@ -3,6 +3,7 @@ from .signals import Signal, SignalCreate, SignalRead, SIGNAL_TYPES, SIGNAL_SOUR
 from .themes import Theme, ThemeCreate, ThemeRead, ThemeEntity
 from .embeddings import Embedding
 from .fundamentals import FundamentalScore, FundamentalScoreCreate, FundamentalScoreRead
+from .risk import RiskAssessment, RiskAssessmentCreate, RiskAssessmentRead
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -10,4 +11,5 @@ __all__ = [
     "Theme", "ThemeCreate", "ThemeRead", "ThemeEntity",
     "Embedding",
     "FundamentalScore", "FundamentalScoreCreate", "FundamentalScoreRead",
+    "RiskAssessment", "RiskAssessmentCreate", "RiskAssessmentRead",
 ]
