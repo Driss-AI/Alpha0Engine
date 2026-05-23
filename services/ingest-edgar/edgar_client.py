@@ -1,6 +1,11 @@
 """
-EDGAR API Client — Form D filing ingest.
-Uses EFTS search, builds filing URLs from CIK + accession number.
+EDGAR API Client — Form D filing ingest via EFTS.
+Field mapping (from actual EFTS response):
+  _id: "CIK-ACC:filename" e.g. "0002031239-26-000001:primary_doc.xml"
+  ciks: list of CIK strings e.g. ["0002031239"]
+  adsh: accession number
+  display_names: list e.g. ["Junction Health, Inc.  (CIK 0002031239)"]
+  file_date: "2026-05-22"
 """
 import os, logging, requests, re
 from typing import List, Dict, Any, Optional
@@ -29,43 +34,43 @@ class EdgarClient:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                # DEBUG: log first hit structure
-                if data.get("hits", {}).get("hits"):
-                    first = data["hits"]["hits"][0]
-                    log.info(f"EFTS debug: _id={first.get('_id')}, _source keys={list(first.get('_source', {}).keys())}")
-                    log.info(f"EFTS debug: _source={dict(list(first.get('_source', {}).items())[:8])}")
                 for hit in data.get("hits", {}).get("hits", []):
                     src = hit.get("_source", {})
-                    acc = hit.get("_id", "")
-                    if not acc:
+                    raw_id = hit.get("_id", "")
+
+                    # ciks is a LIST — extract first element
+                    ciks = src.get("ciks", [])
+                    cik = ciks[0] if isinstance(ciks, list) and ciks else ""
+
+                    # Accession from adsh field, or parse from _id
+                    adsh = src.get("adsh", "")
+                    if not adsh and ":" in raw_id:
+                        adsh = raw_id.split(":")[0]  # strip :filename
+                    if not adsh:
+                        adsh = raw_id
+
+                    # Company name from display_names list
+                    names = src.get("display_names", [])
+                    company_name = names[0].split("(")[0].strip() if isinstance(names, list) and names else ""
+
+                    if not cik or not adsh:
                         continue
 
-                    # Extract CIK — handle int 0, None, etc.
-                    cik = ""
-                    for field in ("entity_id", "cik", "CIK", "ciks"):
-                        val = src.get(field)
-                        if val is not None and str(val).strip() and str(val).strip() != "0":
-                            cik = str(val).strip()
-                            break
-
-                    # Build filing URL
-                    edgar_url = ""
-                    file_path = src.get("file_path", "")
-                    if file_path:
-                        edgar_url = f"https://www.sec.gov/Archives/{file_path}"
-                    elif cik and acc:
-                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/"
+                    # Build URL: /Archives/edgar/data/{CIK}/{accession-with-dashes}/
+                    # Then we'll look for primary_doc.xml inside
+                    edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{adsh}/"
 
                     filings.append({
-                        "accession_number": acc.replace("-", ""),
-                        "accession_formatted": acc,
-                        "cik": cik.zfill(10) if cik else "",
-                        "company_name": str(src.get("entity_name", "") or ""),
+                        "accession_number": adsh.replace("-", ""),
+                        "accession_formatted": adsh,
+                        "cik": cik.zfill(10),
+                        "company_name": company_name,
                         "file_date": src.get("file_date", date_str),
                         "edgar_url": edgar_url,
                     })
 
-                log.info(f"EFTS: {len(filings)} filings. First CIK={filings[0]['cik'] if filings else 'N/A'}, URL={filings[0]['edgar_url'][:80] if filings else 'N/A'}")
+                if filings:
+                    log.info(f"EFTS: {len(filings)} filings. First: {filings[0]['company_name']} CIK={filings[0]['cik']}")
         except Exception as e:
             log.warning(f"EFTS failed: {e}")
 
@@ -114,7 +119,7 @@ class EdgarClient:
             if "<edgarSubmission" in content or ("<?xml" in content[:200] and "formD" in content.lower()):
                 return content
 
-            # HTML index — find XML
+            # HTML index — find primary_doc.xml or any XML
             for pattern in [r'href="([^"]*primary_doc[^"]*\.xml)"', r'href="([^"]*\.xml)"']:
                 matches = re.findall(pattern, content, re.IGNORECASE)
                 if matches:
