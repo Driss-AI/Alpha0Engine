@@ -44,10 +44,15 @@ class EdgarClient:
 
                     # Accession from adsh field, or parse from _id
                     adsh = src.get("adsh", "")
-                    if not adsh and ":" in raw_id:
-                        adsh = raw_id.split(":")[0]  # strip :filename
+                    # Extract primary doc filename and accession from _id
+                    # _id format: "0002031239-26-000001:primary_doc.xml"
+                    primary_doc = ""
+                    if ":" in raw_id:
+                        adsh_part, primary_doc = raw_id.split(":", 1)
+                    else:
+                        adsh_part = raw_id
                     if not adsh:
-                        adsh = raw_id
+                        adsh = src.get("adsh", adsh_part)
 
                     # Company name from display_names list
                     names = src.get("display_names", [])
@@ -56,9 +61,15 @@ class EdgarClient:
                     if not cik or not adsh:
                         continue
 
-                    # Build URL: /Archives/edgar/data/{CIK}/{accession-with-dashes}/
-                    # Then we'll look for primary_doc.xml inside
-                    edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{adsh}/"
+                    # EDGAR URL: CIK without leading zeros, accession without dashes
+                    cik_stripped = str(int(cik))  # remove leading zeros
+                    acc_nodashes = adsh.replace("-", "")
+                    
+                    # Build direct XML URL if we know the filename
+                    if primary_doc:
+                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik_stripped}/{acc_nodashes}/{primary_doc}"
+                    else:
+                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik_stripped}/{acc_nodashes}/"
 
                     filings.append({
                         "accession_number": adsh.replace("-", ""),
