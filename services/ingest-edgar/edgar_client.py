@@ -1,6 +1,6 @@
 """
 EDGAR API Client — Form D filing ingest.
-Uses EFTS search with proper URL construction from accession numbers.
+Uses EFTS search, builds filing URLs from CIK + accession number.
 """
 import os, logging, requests, re
 from typing import List, Dict, Any, Optional
@@ -20,8 +20,6 @@ class EdgarClient:
 
     def get_form_d_filings(self, date_str: str) -> List[Dict[str, Any]]:
         filings = []
-
-        # EFTS full-text search
         try:
             resp = self.session.get(
                 "https://efts.sec.gov/LATEST/search-index",
@@ -31,60 +29,41 @@ class EdgarClient:
             )
             if resp.status_code == 200:
                 data = resp.json()
-                hits = data.get("hits", {}).get("hits", [])
-                for hit in hits:
+                for hit in data.get("hits", {}).get("hits", []):
                     src = hit.get("_source", {})
-                    raw_id = hit.get("_id", "")
-                    cik = str(src.get("entity_id", "") or src.get("cik", "") or "").strip()
-                    entity_name = src.get("entity_name", "") or src.get("display_names", [""])[0] if isinstance(src.get("display_names"), list) else src.get("entity_name", "")
+                    acc = hit.get("_id", "")
+                    if not acc:
+                        continue
+
+                    # Extract CIK — try multiple field names
+                    cik = ""
+                    for field in ("entity_id", "cik", "CIK"):
+                        val = src.get(field)
+                        if val:
+                            cik = str(val).strip()
+                            break
+
+                    # Build filing URL
+                    edgar_url = ""
                     file_path = src.get("file_path", "")
-
-                    # Build EDGAR URL from whatever we have
-                    acc_dashes = raw_id  # keep dashes
-                    acc_nodashes = raw_id.replace("-", "")
-
                     if file_path:
                         edgar_url = f"https://www.sec.gov/Archives/{file_path}"
-                    elif cik:
-                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_dashes}/"
-                    else:
-                        # Use accession number to construct URL via submissions API
-                        edgar_url = f"https://www.sec.gov/cgi-bin/viewer?action=view&cik={acc_nodashes[:10]}&type=D&dateb=&owner=include&count=1"
+                    elif cik and acc:
+                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc}/"
 
                     filings.append({
-                        "accession_number": acc_nodashes,
-                        "accession_formatted": acc_dashes,
-                        "cik": cik.zfill(10),
-                        "company_name": src.get("entity_name", ""),
+                        "accession_number": acc.replace("-", ""),
+                        "accession_formatted": acc,
+                        "cik": cik.zfill(10) if cik else "",
+                        "company_name": str(src.get("entity_name", "") or ""),
                         "file_date": src.get("file_date", date_str),
                         "edgar_url": edgar_url,
                     })
 
-                if filings:
-                    log.info(f"EFTS found {len(filings)} filings. Sample URL: {filings[0]['edgar_url']}")
-                elif hits:
-                    # Log first hit to debug field names
-                    first_src = hits[0].get("_source", {})
-                    log.info(f"EFTS {len(hits)} hits. Fields: {list(first_src.keys())[:10]}. entity_id={first_src.get('entity_id')}, file_path={first_src.get('file_path')}")
-                    # Still add them even without CIK
-                    for hit in hits[:50]:
-                        s = hit.get("_source", {})
-                        rid = hit.get("_id", "")
-                        if rid:
-                            filings.append({
-                                "accession_number": rid.replace("-", ""),
-                                "accession_formatted": rid,
-                                "cik": str(s.get("entity_id", "") or "").zfill(10),
-                                "company_name": s.get("entity_name", "") or str(s.get("display_names", [""])),
-                                "file_date": s.get("file_date", date_str),
-                                "edgar_url": f"https://www.sec.gov/Archives/edgar/data/{s.get('entity_id', '0')}/{rid}/" if s.get("entity_id") else "",
-                            })
-                    if filings:
-                        log.info(f"Added {len(filings)} from EFTS with available fields")
+                log.info(f"EFTS: {len(filings)} filings. First CIK={filings[0]['cik'] if filings else 'N/A'}, URL={filings[0]['edgar_url'][:80] if filings else 'N/A'}")
         except Exception as e:
-            log.warning(f"EFTS search failed: {e}")
+            log.warning(f"EFTS failed: {e}")
 
-        # Fallback: daily index
         if not filings:
             filings = self._try_daily_index(date_str)
 
@@ -110,7 +89,7 @@ class EdgarClient:
                         "edgar_url": f"https://www.sec.gov/Archives/{parts[4].strip()}",
                     })
             if filings:
-                log.info(f"Daily index found {len(filings)} Form D filings")
+                log.info(f"Daily index: {len(filings)} Form D filings")
             return filings
         except Exception as e:
             log.warning(f"Daily index failed: {e}")
@@ -120,45 +99,32 @@ class EdgarClient:
         if not filing_url:
             return None
         try:
-            # Get the filing index page
             resp = self.session.get(filing_url, timeout=30)
             if resp.status_code == 404:
-                log.debug(f"404: {filing_url}")
                 return None
             resp.raise_for_status()
             content = resp.text
 
-            # Direct XML check
-            if "<edgarSubmission" in content or ("<formD" in content.lower() and "<?xml" in content[:200]):
+            # Direct XML
+            if "<edgarSubmission" in content or ("<?xml" in content[:200] and "formD" in content.lower()):
                 return content
 
-            # HTML index page — find XML link
-            # Primary doc patterns: primary_doc.xml, *-primary_doc.xml, formD.xml
-            xml_patterns = [
-                r'href="([^"]*primary_doc[^"]*\.xml)"',
-                r'href="([^"]*formD[^"]*\.xml)"',
-                r'href="([^"]*\.xml)"',
-            ]
-            for pattern in xml_patterns:
-                xml_links = re.findall(pattern, content, re.IGNORECASE)
-                if xml_links:
-                    xml_filename = xml_links[0]
-                    if not xml_filename.startswith("http"):
-                        xml_url = filing_url.rstrip("/") + "/" + xml_filename.lstrip("/")
-                    else:
-                        xml_url = xml_filename
+            # HTML index — find XML
+            for pattern in [r'href="([^"]*primary_doc[^"]*\.xml)"', r'href="([^"]*\.xml)"']:
+                matches = re.findall(pattern, content, re.IGNORECASE)
+                if matches:
+                    xml_fn = matches[0]
+                    xml_url = xml_fn if xml_fn.startswith("http") else filing_url.rstrip("/") + "/" + xml_fn.lstrip("/")
                     try:
-                        xml_resp = self.session.get(xml_url, timeout=30)
-                        xml_resp.raise_for_status()
-                        if "edgarSubmission" in xml_resp.text or "<?xml" in xml_resp.text[:200]:
-                            return xml_resp.text
+                        xr = self.session.get(xml_url, timeout=30)
+                        xr.raise_for_status()
+                        if "edgarSubmission" in xr.text or "<?xml" in xr.text[:200]:
+                            return xr.text
                     except Exception:
                         continue
-
-            log.debug(f"No Form D XML found at {filing_url}")
             return None
         except Exception as e:
-            log.debug(f"Download error {filing_url}: {e}")
+            log.debug(f"Download error: {e}")
             return None
 
     def archive_to_r2(self, parsed, raw_xml, date_str):
@@ -167,8 +133,8 @@ class EdgarClient:
             from shared.clients.r2 import r2_key, upload
             key = r2_key("edgar", "form_d", date_str, parsed.get("accession_number", "unknown"))
             asyncio.get_event_loop().run_until_complete(upload(key, raw_xml, "text/xml"))
-        except Exception as e:
-            log.warning(f"R2 archive failed (non-fatal): {e}")
+        except Exception:
+            pass
 
     def write_signal(self, parsed):
         try:
@@ -195,5 +161,5 @@ class EdgarClient:
             import asyncio
             from shared.clients.redis_client import publish_signal
             asyncio.get_event_loop().run_until_complete(publish_signal(parsed))
-        except Exception as e:
-            log.warning(f"Redis publish failed (non-fatal): {e}")
+        except Exception:
+            pass
