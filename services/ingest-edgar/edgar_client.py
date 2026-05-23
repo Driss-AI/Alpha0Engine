@@ -35,16 +35,21 @@ class EdgarClient:
                 for hit in hits:
                     src = hit.get("_source", {})
                     raw_id = hit.get("_id", "")
-                    cik = str(src.get("entity_id", "")).strip()
-                    if not cik or not raw_id:
-                        continue
+                    cik = str(src.get("entity_id", "") or src.get("cik", "") or "").strip()
+                    entity_name = src.get("entity_name", "") or src.get("display_names", [""])[0] if isinstance(src.get("display_names"), list) else src.get("entity_name", "")
+                    file_path = src.get("file_path", "")
 
-                    # Build proper EDGAR URL
-                    # raw_id is typically: "0001234567-26-001234"
-                    # URL format: /Archives/edgar/data/{CIK}/{accession-with-dashes}/
+                    # Build EDGAR URL from whatever we have
                     acc_dashes = raw_id  # keep dashes
                     acc_nodashes = raw_id.replace("-", "")
-                    edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_dashes}/"
+
+                    if file_path:
+                        edgar_url = f"https://www.sec.gov/Archives/{file_path}"
+                    elif cik:
+                        edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{acc_dashes}/"
+                    else:
+                        # Use accession number to construct URL via submissions API
+                        edgar_url = f"https://www.sec.gov/cgi-bin/viewer?action=view&cik={acc_nodashes[:10]}&type=D&dateb=&owner=include&count=1"
 
                     filings.append({
                         "accession_number": acc_nodashes,
@@ -57,8 +62,25 @@ class EdgarClient:
 
                 if filings:
                     log.info(f"EFTS found {len(filings)} filings. Sample URL: {filings[0]['edgar_url']}")
-                else:
-                    log.info(f"EFTS returned {len(hits)} hits but no valid filings")
+                elif hits:
+                    # Log first hit to debug field names
+                    first_src = hits[0].get("_source", {})
+                    log.info(f"EFTS {len(hits)} hits. Fields: {list(first_src.keys())[:10]}. entity_id={first_src.get('entity_id')}, file_path={first_src.get('file_path')}")
+                    # Still add them even without CIK
+                    for hit in hits[:50]:
+                        s = hit.get("_source", {})
+                        rid = hit.get("_id", "")
+                        if rid:
+                            filings.append({
+                                "accession_number": rid.replace("-", ""),
+                                "accession_formatted": rid,
+                                "cik": str(s.get("entity_id", "") or "").zfill(10),
+                                "company_name": s.get("entity_name", "") or str(s.get("display_names", [""])),
+                                "file_date": s.get("file_date", date_str),
+                                "edgar_url": f"https://www.sec.gov/Archives/edgar/data/{s.get('entity_id', '0')}/{rid}/" if s.get("entity_id") else "",
+                            })
+                    if filings:
+                        log.info(f"Added {len(filings)} from EFTS with available fields")
         except Exception as e:
             log.warning(f"EFTS search failed: {e}")
 
