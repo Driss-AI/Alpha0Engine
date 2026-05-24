@@ -19,14 +19,14 @@ SIGNAL_TYPES = [
     "patent_filing", "patent_grant", "form_d",
     "github_commit", "github_star", "job_posting",
     "secondary_trade", "citation", "news_mention", "crossover_filing",
-    "clinical_trial", "fda_catalyst",
+    "clinical_trial", "fda_catalyst", "form_4_insider",
 ]
 
 SIGNAL_SOURCES = [
     "uspto", "edgar", "github", "caplight",
     "forge", "hiive", "semantic_scholar", "openalexia",
     "wellfound", "sec_13f", "manual",
-    "clinicaltrials_gov", "fda_gov",
+    "clinicaltrials_gov", "fda_gov", "edgar_form4",
 ]
 
 
