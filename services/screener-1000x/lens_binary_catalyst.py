@@ -106,6 +106,8 @@ def detect_catalysts_from_signals(signals: List[Dict[str, Any]]) -> List[Dict[st
         "patent_filing": "patent_grant",
         "crossover_filing": "regulatory_approval",
         "form_d": "partnership_announcement",
+        "clinical_trial": "clinical_trial_data",
+        "fda_catalyst": "fda_approval",
         "sec_13f": None,  # Not a catalyst
         "github_star": None,
         "github_commit": None,
@@ -131,24 +133,39 @@ def detect_catalysts_from_signals(signals: List[Dict[str, Any]]) -> List[Dict[st
         elif any(kw in text for kw in ["contract", "award", "dod", "defense"]):
             cat_type = "contract_award"
 
-        # Estimate days until catalyst
-        sig_date = sig.get("signal_date")
-        days_until = None
-        if sig_date:
-            try:
-                if isinstance(sig_date, str):
-                    sig_dt = datetime.fromisoformat(sig_date.replace("Z", "+00:00")).replace(tzinfo=None)
-                else:
-                    sig_dt = sig_date
-                # Catalysts from signals are typically forward-looking by ~90-180 days
-                estimated_catalyst = sig_dt + timedelta(days=120)
-                days_until = (estimated_catalyst - datetime.utcnow()).days
-            except (ValueError, TypeError):
-                pass
+        # Use real catalyst_proximity_days from CT.gov data if available
+        days_until = raw.get("catalyst_proximity_days")
+
+        # Fallback: estimate from signal date
+        if days_until is None:
+            sig_date = sig.get("signal_date")
+            if sig_date:
+                try:
+                    if isinstance(sig_date, str):
+                        sig_dt = datetime.fromisoformat(sig_date.replace("Z", "+00:00")).replace(tzinfo=None)
+                    else:
+                        sig_dt = sig_date
+                    # For clinical trials, signal_date IS the completion date
+                    if sig.get("signal_type") in ("clinical_trial", "fda_catalyst"):
+                        days_until = (sig_dt - datetime.utcnow()).days
+                    else:
+                        estimated_catalyst = sig_dt + timedelta(days=120)
+                        days_until = (estimated_catalyst - datetime.utcnow()).days
+                except (ValueError, TypeError):
+                    pass
+
+        # Boost catalyst weight for clinical trial signals with real data
+        cat_weight = CATALYST_WEIGHTS.get(cat_type, 0.3)
+        if sig.get("signal_type") == "clinical_trial" and "phase" in raw:
+            phase = str(raw.get("phase", "")).upper()
+            if "PHASE3" in phase:
+                cat_weight = max(cat_weight, 0.90)
+            elif "PHASE2" in phase:
+                cat_weight = max(cat_weight, 0.70)
 
         catalysts.append({
             "type": cat_type,
-            "weight": CATALYST_WEIGHTS.get(cat_type, 0.3),
+            "weight": cat_weight,
             "days_until": days_until,
             "source_signal": sig.get("signal_type"),
             "notes": sig.get("notes"),
