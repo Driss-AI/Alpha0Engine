@@ -248,8 +248,8 @@ async def run_price_ingestion():
 async def run_universe_discovery():
     """
     Discover new public companies from the SEC ticker list.
-    Creates Entity records for companies not yet tracked.
-    Then does a price check to filter to sub-$500M market cap.
+    Strategy: batch OHLCV download (fast) → filter by price < $50 → create entities.
+    Market caps are fetched later during daily price ingestion.
     """
     logger.info("=" * 60)
     logger.info("UNIVERSE DISCOVERY — Scanning SEC ticker list")
@@ -284,52 +284,41 @@ async def run_universe_discovery():
             logger.info("No new tickers. Universe is up to date.")
             return
 
-        # Price-check in batches to find sub-$500M companies
+        # Step 1: Fast batch OHLCV to get prices (100+ tickers at a time)
         new_tickers = [e["ticker"].upper() for e in new_entries[:UNIVERSE_MAX]]
-        logger.info(f"Price-checking {len(new_tickers)} tickers for market cap filter...")
+        logger.info(f"Batch-fetching prices for {len(new_tickers)} tickers...")
+        price_data = fetch_batch_prices(new_tickers, period="5d")
+        logger.info(f"Got price data for {len(price_data)} tickers")
 
-        mcap_data = {}
-        for i in range(0, len(new_tickers), MCAP_BATCH):
-            batch = new_tickers[i:i + MCAP_BATCH]
-            batch_mcaps = fetch_market_caps(batch)
-            mcap_data.update(batch_mcaps)
-            if i % 200 == 0 and i > 0:
-                logger.info(f"  Checked {i}/{len(new_tickers)} tickers, found {len(mcap_data)} with data...")
-            await asyncio.sleep(0.3)
+        # Step 2: Filter by price < $50 (micro-cap candidates)
+        # Tickers with no price data are excluded (likely delisted/inactive)
+        under_50 = {}
+        for ticker, records in price_data.items():
+            if records:
+                latest_close = records[-1].get("close", 999)
+                if latest_close < 50.0:
+                    under_50[ticker] = latest_close
 
-        # Filter to sub-$500M (or unknown mcap — include for further screening)
-        qualified = []
-        for entry in new_entries[:UNIVERSE_MAX]:
-            ticker = entry["ticker"].upper()
-            info = mcap_data.get(ticker, {})
-            mcap = info.get("market_cap")
+        logger.info(f"Tickers under $50: {len(under_50)}")
 
-            # Include if: market cap < $500M, OR market cap unknown (might be micro)
-            if mcap is None or mcap < 500_000_000:
-                qualified.append({
-                    **entry,
-                    "market_cap": mcap,
-                    "sector": info.get("sector"),
-                    "company_name": info.get("company_name") or entry.get("company_name"),
-                })
+        # Build a lookup from ticker → SEC entry
+        sec_lookup = {e["ticker"].upper(): e for e in new_entries}
 
-        logger.info(f"Qualified (sub-$500M or unknown): {len(qualified)} companies")
-
-        # Create entities
+        # Step 3: Create entities for sub-$50 stocks
         created = 0
-        for q in qualified:
+        for ticker, close in under_50.items():
+            sec_entry = sec_lookup.get(ticker, {})
             try:
                 entity = Entity(
-                    name=q.get("company_name") or q["ticker"],
-                    ticker=q["ticker"].upper(),
-                    cik=q.get("cik"),
+                    name=sec_entry.get("company_name") or ticker,
+                    ticker=ticker,
+                    cik=sec_entry.get("cik"),
                     entity_type="public",
-                    sector=q.get("sector"),
                 )
                 session.add(entity)
                 created += 1
             except Exception as e:
-                logger.debug(f"Entity creation failed for {q['ticker']}: {e}")
+                logger.debug(f"Entity creation failed for {ticker}: {e}")
 
         await session.commit()
 
@@ -337,8 +326,8 @@ async def run_universe_discovery():
         logger.info(f"UNIVERSE DISCOVERY COMPLETE")
         logger.info(f"  SEC universe: {len(sec_tickers)}")
         logger.info(f"  Already tracked: {len(existing_tickers)}")
-        logger.info(f"  Price-checked: {len(new_tickers)}")
-        logger.info(f"  Qualified sub-$500M: {len(qualified)}")
+        logger.info(f"  Price data found: {len(price_data)}")
+        logger.info(f"  Under $50: {len(under_50)}")
         logger.info(f"  New entities created: {created}")
         logger.info("=" * 60)
 

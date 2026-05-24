@@ -149,9 +149,10 @@ def fetch_market_caps(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
     Uses yfinance .info (slower — one call per ticker).
     Returns {ticker: {market_cap, shares_outstanding}}.
     """
+    import time
     results = {}
 
-    for ticker in tickers:
+    for i, ticker in enumerate(tickers):
         try:
             info = yf.Ticker(ticker).info
             mcap = info.get("marketCap")
@@ -165,8 +166,14 @@ def fetch_market_caps(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
                     "industry": info.get("industry"),
                     "company_name": info.get("shortName") or info.get("longName"),
                 }
+            # Rate limit: 1 req/sec to avoid Yahoo 429s
+            time.sleep(1.0)
         except Exception as e:
-            logger.debug(f"Info fetch failed for {ticker}: {e}")
+            if "429" in str(e) or "Too Many" in str(e):
+                logger.warning(f"Rate limited at ticker {ticker}, sleeping 30s...")
+                time.sleep(30)
+            else:
+                logger.debug(f"Info fetch failed for {ticker}: {e}")
 
     return results
 
