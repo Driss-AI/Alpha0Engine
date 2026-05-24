@@ -302,35 +302,20 @@ async def run_universe_discovery():
             logger.info("No new tickers. Universe is up to date.")
             return
 
-        # Step 1: Fast batch OHLCV to get prices (100+ tickers at a time)
-        new_tickers = [e["ticker"].upper() for e in new_entries[:UNIVERSE_MAX]]
-        logger.info(f"Batch-fetching prices for {len(new_tickers)} tickers...")
-        price_data = fetch_batch_prices(new_tickers, period="5d")
-        logger.info(f"Got price data for {len(price_data)} tickers")
-
-        # Step 2: Filter by price < $50 (micro-cap candidates)
-        # Tickers with no price data are excluded (likely delisted/inactive)
-        under_50 = {}
-        for ticker, records in price_data.items():
-            if records:
-                latest_close = records[-1].get("close", 999)
-                if latest_close < 50.0:
-                    under_50[ticker] = latest_close
-
-        logger.info(f"Tickers under $50: {len(under_50)}")
-
-        # Build a lookup from ticker → SEC entry
-        sec_lookup = {e["ticker"].upper(): e for e in new_entries}
-
-        # Step 3: Create entities for sub-$50 stocks
+        # Create entities directly from SEC ticker list.
+        # No price filtering here — daily price ingestion handles that.
+        # This ensures the entity table is populated so all other
+        # pipelines (Form 4, trials, 8-K, screener) have data to work with.
         created = 0
-        for ticker, close in under_50.items():
-            sec_entry = sec_lookup.get(ticker, {})
+        for entry in new_entries[:UNIVERSE_MAX]:
+            ticker = entry["ticker"].upper().strip()
+            if not ticker or len(ticker) > 10:
+                continue
             try:
                 entity = Entity(
-                    name=sec_entry.get("company_name") or ticker,
+                    name=entry.get("company_name") or ticker,
                     ticker=ticker,
-                    cik=sec_entry.get("cik"),
+                    cik=entry.get("cik"),
                     entity_type="public",
                 )
                 session.add(entity)
@@ -338,14 +323,17 @@ async def run_universe_discovery():
             except Exception as e:
                 logger.debug(f"Entity creation failed for {ticker}: {e}")
 
+            # Commit in batches to avoid memory issues
+            if created % 500 == 0 and created > 0:
+                await session.commit()
+                logger.info(f"  Created {created} entities so far...")
+
         await session.commit()
 
         logger.info("=" * 60)
         logger.info(f"UNIVERSE DISCOVERY COMPLETE")
         logger.info(f"  SEC universe: {len(sec_tickers)}")
         logger.info(f"  Already tracked: {len(existing_tickers)}")
-        logger.info(f"  Price data found: {len(price_data)}")
-        logger.info(f"  Under $50: {len(under_50)}")
         logger.info(f"  New entities created: {created}")
         logger.info("=" * 60)
 
