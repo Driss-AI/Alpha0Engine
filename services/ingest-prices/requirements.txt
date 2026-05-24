@@ -1,0 +1,7 @@
+sqlmodel==0.0.19
+asyncpg==0.29.0
+python-dotenv==1.0.1
+httpx==0.27.0
+pydantic==2.7.1
+yfinance==0.2.40
+pandas>=2.0.0

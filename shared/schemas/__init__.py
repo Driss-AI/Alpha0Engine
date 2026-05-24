@@ -5,6 +5,7 @@ from .embeddings import Embedding
 from .fundamentals import FundamentalScore, FundamentalScoreCreate, FundamentalScoreRead
 from .risk import RiskAssessment, RiskAssessmentCreate, RiskAssessmentRead
 from .equity_screen import EquityScreen, EquityScreenCreate, EquityScreenRead
+from .daily_prices import DailyPrice, DailyPriceCreate, DailyPriceRead, PriceSnapshot
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -14,4 +15,5 @@ __all__ = [
     "FundamentalScore", "FundamentalScoreCreate", "FundamentalScoreRead",
     "RiskAssessment", "RiskAssessmentCreate", "RiskAssessmentRead",
     "EquityScreen", "EquityScreenCreate", "EquityScreenRead",
+    "DailyPrice", "DailyPriceCreate", "DailyPriceRead", "PriceSnapshot",
 ]
