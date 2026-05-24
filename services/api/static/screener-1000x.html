@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>1000x Screener — Alpha0Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,300&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #060607; --s1: #0C0C0E; --s2: #121215;
+  --b0: rgba(255,255,255,0.055); --b1: rgba(255,255,255,0.11); --b2: rgba(255,255,255,0.2);
+  --t0: #F8F8F8; --t1: rgba(248,248,248,0.5); --t2: rgba(248,248,248,0.22);
+  --pass: #00E87A; --fail: #FF3B3B; --amber: #F5A623; --lime: #C8FF00;
+  --mono: 'JetBrains Mono','Cascadia Code','Fira Code',ui-monospace,monospace;
+}
+html,body { background:var(--bg); color:var(--t0); font-family:var(--mono); min-height:100vh; -webkit-font-smoothing:antialiased; overflow-x:hidden; }
+.scanlines { position:fixed;top:0;left:0;right:0;bottom:0;pointer-events:none;z-index:9999;background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.035) 3px,rgba(0,0,0,0.035) 4px); }
+
+/* HEADER */
+.hdr { display:flex;align-items:center;justify-content:space-between;padding:16px 32px;border-bottom:1px solid var(--b0); }
+.logo { font-size:10px;font-weight:700;letter-spacing:0.22em;color:var(--t2);text-transform:uppercase; }
+.logo em { color:var(--lime);font-style:normal; }
+.hdr-mid { font-size:10px;font-weight:500;letter-spacing:0.2em;color:var(--t2);text-transform:uppercase; }
+.hdr-right { display:flex;flex-direction:column;align-items:flex-end;gap:2px; }
+.clock { font-size:13px;font-weight:500;letter-spacing:0.06em; }
+.clock-lbl { font-size:9px;letter-spacing:0.15em;color:var(--t2);text-transform:uppercase; }
+.blink { display:inline-block;width:6px;height:12px;background:var(--lime);margin-left:2px;vertical-align:middle;animation:blink 1s step-end infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+/* SEARCH BAR */
+.search-bar { display:flex;align-items:center;gap:10px;padding:12px 32px;border-bottom:1px solid var(--b0);background:var(--s1); }
+.search-wrap { display:flex;align-items:center;gap:8px;flex:1;max-width:320px; }
+.search-label { font-size:9px;letter-spacing:0.18em;color:var(--t2);text-transform:uppercase;flex-shrink:0; }
+.search-input {
+  font-family:var(--mono);font-size:13px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;
+  background:transparent;border:none;border-bottom:1px solid var(--b1);color:var(--t0);
+  padding:4px 0;width:120px;outline:none;caret-color:var(--lime);
+  transition:border-color 0.15s;
+}
+.search-input::placeholder { color:var(--t2);font-weight:300;text-transform:uppercase; }
+.search-input:focus { border-color:var(--lime); }
+.search-btn {
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:0.15em;
+  padding:5px 12px;border:1px solid var(--b1);background:transparent;
+  color:var(--t1);cursor:pointer;border-radius:2px;text-transform:uppercase;
+  transition:all 0.12s;
+}
+.search-btn:hover { border-color:var(--lime);color:var(--lime); }
+.sep { width:1px;height:18px;background:var(--b0);margin:0 8px; }
+
+/* WATCHLIST BUTTONS */
+.wl-label { font-size:8.5px;letter-spacing:0.18em;color:var(--t2);text-transform:uppercase;flex-shrink:0; }
+.wl-btns { display:flex;gap:5px;flex-wrap:wrap; }
+.wl-btn {
+  font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:0.12em;
+  padding:5px 13px;border:1px solid var(--b0);background:transparent;
+  color:var(--t1);cursor:pointer;border-radius:2px;text-transform:uppercase;
+  transition:all 0.12s;
+}
+.wl-btn:hover { border-color:var(--b2);color:var(--t0); }
+.wl-btn.active { background:var(--lime);border-color:var(--lime);color:#000; }
+.wl-btn.conviction { border-color:rgba(0,232,122,0.3);color:var(--pass); }
+.wl-btn.conviction.active { background:var(--pass);border-color:var(--pass);color:#000; }
+
+/* STOCK META BAR */
+.meta-bar { display:flex;align-items:center;gap:14px;padding:12px 32px;border-bottom:1px solid var(--b0); }
+.stock-name { font-size:10px;font-weight:300;color:var(--t1);letter-spacing:0.1em;text-transform:uppercase; }
+.stock-mcap { font-size:13px;font-weight:600;letter-spacing:0.04em; }
+.stock-tier { font-size:9px;font-weight:700;letter-spacing:0.14em;padding:4px 10px;border-radius:2px;text-transform:uppercase; }
+.tier-conviction { background:rgba(0,232,122,0.12);color:var(--pass);border:1px solid rgba(0,232,122,0.2); }
+.tier-high       { background:rgba(200,255,0,0.1);color:var(--lime);border:1px solid rgba(200,255,0,0.2); }
+.tier-watch      { background:rgba(245,166,35,0.1);color:var(--amber);border:1px solid rgba(245,166,35,0.2); }
+.tier-other      { background:rgba(255,59,59,0.08);color:var(--fail);border:1px solid rgba(255,59,59,0.14); }
+.notes-text { font-size:9px;font-weight:300;font-style:italic;color:var(--t2);margin-left:auto;max-width:340px;text-align:right;line-height:1.5; }
+
+/* MAIN LAYOUT */
+.main { display:grid;grid-template-columns:220px 1fr;min-height:calc(100vh - 160px); }
+
+/* LEFT PANEL */
+.left { padding:26px 22px;border-right:1px solid var(--b0);display:flex;flex-direction:column;gap:24px; }
+.sec-lbl { font-size:8.5px;letter-spacing:0.22em;color:var(--t2);text-transform:uppercase;margin-bottom:8px; }
+.big-score { display:flex;align-items:baseline;gap:4px;line-height:1; }
+.big-score .val { font-size:78px;font-weight:700;letter-spacing:-0.04em; }
+.big-score .denom { font-size:15px;color:var(--t2);font-weight:300; }
+.pass-count { font-size:11px;color:var(--t1);margin-top:5px; }
+.pass-count em { color:var(--pass);font-style:normal;font-weight:700; }
+.arc-wrap { padding:2px 0; }
+.arc-wrap svg { overflow:visible; }
+.divider { border:none;border-top:1px solid var(--b0); }
+.verdict-box { border:1px solid var(--b0);border-radius:3px;background:var(--s1);padding:13px; }
+.verdict-text { font-size:11.5px;font-weight:400;color:var(--t0);line-height:1.6; }
+.mod-info { font-size:9.5px;color:var(--t1);line-height:1.9; }
+.mod-info span { color:var(--t2);font-weight:300; }
+
+/* RIGHT PANEL */
+.right { padding:22px 26px; }
+.rh { display:flex;align-items:center;justify-content:space-between;margin-bottom:16px; }
+.rh-lbl { font-size:8.5px;letter-spacing:0.22em;color:var(--t2);text-transform:uppercase; }
+.scan-dot { display:inline-block;width:5px;height:5px;border-radius:50%;background:var(--pass);margin-right:5px;animation:pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.7)} }
+.scan-live { font-size:8.5px;letter-spacing:0.12em;color:var(--pass);text-transform:uppercase; }
+
+/* LENS CARDS */
+.grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+.grid .card:last-child { grid-column:1/-1; }
+.card { background:var(--s1);border:1px solid var(--b0);border-radius:5px;padding:18px 20px;position:relative;overflow:hidden;opacity:0;transform:translateY(18px);transition:border-color 0.2s; }
+.card:hover { border-color:var(--b1); }
+.card::after { content:'';position:absolute;top:0;left:0;right:0;height:1.5px; }
+.card.pass::after { background:var(--pass); } .card.fail::after { background:var(--fail); }
+.card-top { display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px; }
+.lens-id { font-size:8px;letter-spacing:0.2em;color:var(--t2);text-transform:uppercase;margin-bottom:3px; }
+.lens-nm { font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--t0); }
+.badge { font-size:8px;letter-spacing:0.14em;font-weight:700;padding:4px 8px;border-radius:2px;text-transform:uppercase;flex-shrink:0; }
+.pass .badge { background:rgba(0,232,122,0.1);color:var(--pass);border:1px solid rgba(0,232,122,0.18); }
+.fail .badge { background:rgba(255,59,59,0.08);color:var(--fail);border:1px solid rgba(255,59,59,0.14); }
+.lens-desc { font-size:9.5px;font-weight:300;font-style:italic;color:var(--t2);line-height:1.65;margin-bottom:14px; }
+.bar-track { width:100%;height:2px;background:var(--b0);border-radius:1px;overflow:hidden;margin-bottom:12px; }
+.bar-fill { height:100%;width:0%;border-radius:1px; }
+.pass .bar-fill { background:var(--pass); } .fail .bar-fill { background:var(--fail); }
+.card-bot { display:flex;align-items:flex-end;justify-content:space-between; }
+.score-big { font-size:36px;font-weight:700;letter-spacing:-0.03em;line-height:1; }
+.pass .score-big { color:var(--t0); } .fail .score-big { color:rgba(248,248,248,0.28); }
+.score-lbl { font-size:8px;color:var(--t2);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:3px; }
+.last-inner { display:grid;grid-template-columns:1fr 1fr;gap:24px;width:100%; }
+
+/* STATES */
+.state-box { display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px 20px;gap:12px;text-align:center;grid-column:1/-1; }
+.state-icon { font-size:28px;color:var(--t2); }
+.state-title { font-size:13px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--t1); }
+.state-sub { font-size:10px;color:var(--t2);font-weight:300;line-height:1.7; }
+.spinner { width:24px;height:24px;border:2px solid var(--b0);border-top-color:var(--lime);border-radius:50%;animation:spin 0.7s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+
+/* FOOTER */
+.footer { padding:13px 32px;border-top:1px solid var(--b0);display:flex;align-items:center;justify-content:space-between;font-size:9px;letter-spacing:0.1em;color:var(--t2); }
+.fverdict { font-size:10px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase; }
+.fverdict.strong { color:var(--pass); } .fverdict.moderate { color:var(--amber); } .fverdict.weak { color:var(--fail); }
+</style>
+</head>
+<body>
+<div class="scanlines"></div>
+
+<header class="hdr">
+  <div class="logo">ALPHA<em>0</em>ENGINE</div>
+  <div class="hdr-mid">1000x Screener &mdash; Module 05</div>
+  <div class="hdr-right">
+    <div class="clock"><span id="clock">00:00:00</span><span class="blink"></span></div>
+    <div class="clock-lbl">UTC Live</div>
+  </div>
+</header>
+
+<div class="search-bar">
+  <div class="search-wrap">
+    <span class="search-label">Ticker</span>
+    <input class="search-input" id="search" type="text" placeholder="AAPL" maxlength="10"
+      onkeydown="if(event.key==='Enter')doSearch()">
+    <button class="search-btn" onclick="doSearch()">Scan ↵</button>
+  </div>
+  <div class="sep"></div>
+  <span class="wl-label">Watchlist</span>
+  <div class="wl-btns" id="wl-btns">
+    <span style="font-size:9px;color:var(--t2);">Loading...</span>
+  </div>
+</div>
+
+<div class="meta-bar">
+  <span class="stock-name" id="sname">&mdash;</span>
+  <span class="stock-mcap" id="smcap">&mdash;</span>
+  <span class="stock-tier" id="stier">&mdash;</span>
+  <span class="notes-text" id="snotes">&mdash;</span>
+</div>
+
+<div class="main">
+  <aside class="left">
+    <div>
+      <div class="sec-lbl">Overall Score</div>
+      <div class="big-score"><span class="val" id="overall">—</span><span class="denom">/100</span></div>
+      <div class="pass-count"><em id="pcount">—</em> of 5 lenses pass</div>
+    </div>
+    <div class="arc-wrap">
+      <svg viewBox="0 0 160 90" width="160" height="90">
+        <path d="M 14 82 A 67 67 0 0 1 146 82" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="7" stroke-linecap="round"/>
+        <path id="arc" d="M 14 82 A 67 67 0 0 1 146 82" fill="none" stroke="#C8FF00" stroke-width="7" stroke-linecap="round" stroke-dasharray="210" stroke-dashoffset="210"/>
+      </svg>
+    </div>
+    <hr class="divider">
+    <div class="verdict-box">
+      <div class="sec-lbl">Verdict</div>
+      <div class="verdict-text" id="vtext">Awaiting scan&hellip;</div>
+    </div>
+    <hr class="divider">
+    <div>
+      <div class="sec-lbl">Service</div>
+      <div class="mod-info">screener-1000x<br><span>5 lenses active</span><br><span>alpha0engine · Railway</span></div>
+    </div>
+  </aside>
+
+  <section class="right">
+    <div class="rh">
+      <div class="rh-lbl">5-Lens Analysis</div>
+      <div class="scan-live"><span class="scan-dot"></span>Live Data</div>
+    </div>
+    <div class="grid" id="grid">
+      <div class="state-box">
+        <div class="spinner"></div>
+        <div class="state-title">Connecting to Engine</div>
+        <div class="state-sub">Fetching watchlist from Railway&hellip;</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer class="footer">
+  <span>Alpha0Engine v0.5 &mdash; screener-1000x &mdash; Module 05</span>
+  <span class="fverdict" id="fverdict">&mdash;</span>
+  <span id="fscan">Last scan: &mdash;</span>
+</footer>
+
+<script>
+const API = 'https://alpha0engine-production.up.railway.app/api/v1';
+const PASS = 0.6;
+let busy = false, currentTicker = null;
+
+/* ── Formatting ─────────────────────────────────────────── */
+function fmtMcap(v) {
+  if (!v) return '—';
+  if (v >= 1e9) return '$' + (v/1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return '$' + (v/1e6).toFixed(1) + 'M';
+  return '$' + v.toLocaleString();
+}
+function tierClass(t) {
+  if (!t) return 'tier-other';
+  const m = { CONVICTION:'tier-conviction', HIGH:'tier-high', WATCH:'tier-watch' };
+  return m[t] || 'tier-other';
+}
+function verdict(passes, score) {
+  if (passes >= 5)                    return { text:'All 5 lenses pass — exceptional setup',          label:'PERFECT SETUP',        cls:'strong' };
+  if (passes >= 4 && score >= 70)     return { text:'4 of 5 lenses pass — strong asymmetric setup',  label:'STRONG BUY CANDIDATE', cls:'strong' };
+  if (passes >= 3 && score >= 55)     return { text:'3 lenses pass — moderate setup, monitor closely',label:'WATCHLIST',            cls:'moderate' };
+  return                                     { text:'Fails majority of lenses — not a 1000x candidate',label:'DOES NOT QUALIFY',   cls:'weak' };
+}
+
+/* ── Lens description builder ───────────────────────────── */
+function lensDesc(n, d) {
+  if (!d) return 'Data unavailable';
+  const parts = [];
+  switch(n) {
+    case 1:
+      if (d.type) parts.push(d.type);
+      if (d.proximity_days != null) parts.push(d.proximity_days + 'd out');
+      return parts.join(' — ') || 'No active catalyst identified';
+    case 2:
+      if (d.trajectory) parts.push('EPS: ' + d.trajectory);
+      if (d.revenue_acceleration != null) parts.push('Rev Δ ' + (d.revenue_acceleration*100).toFixed(1) + '%');
+      if (d.margin_expansion_rate != null) parts.push('Margin Δ ' + (d.margin_expansion_rate*100).toFixed(1) + '%');
+      return parts.join(' · ') || 'No earnings inflection detected';
+    case 3:
+      if (d.megatrend) parts.push(d.megatrend);
+      if (d.theme_strength) parts.push('Strength: ' + d.theme_strength);
+      if (d.institutional_neglect != null) parts.push(d.institutional_neglect ? 'Inst. neglected' : 'Inst. covered');
+      return parts.join(' — ') || 'No megatrend alignment found';
+    case 4:
+      if (d.float_category) parts.push(d.float_category + ' float');
+      if (d.short_interest != null) parts.push((d.short_interest*100).toFixed(1) + '% SI');
+      if (d.squeeze_potential) parts.push('Squeeze: ' + d.squeeze_potential);
+      if (d.days_to_cover != null) parts.push(d.days_to_cover.toFixed(1) + ' DTC');
+      return parts.join(' · ') || 'Float data unavailable';
+    case 5:
+      if (d.institutional_buys) parts.push(d.institutional_buys + ' inst. buys (13F)');
+      if (d.insider_buys) parts.push(d.insider_buys + ' insider buys');
+      if (d.insider_buy_value && d.insider_buy_value > 0) parts.push(fmtMcap(d.insider_buy_value) + ' insider value');
+      return parts.join(' · ') || 'No smart money activity detected';
+  }
+  return '—';
+}
+
+/* ── Lens mapper ────────────────────────────────────────── */
+function mapLenses(data) {
+  return [
+    { name:'Binary Catalyst',    score:(data.lens_1_binary_catalyst?.score||0)*100,    pass:(data.lens_1_binary_catalyst?.score||0)>=PASS,    desc:lensDesc(1,data.lens_1_binary_catalyst) },
+    { name:'Earnings Inflection',score:(data.lens_2_earnings_inflection?.score||0)*100, pass:(data.lens_2_earnings_inflection?.score||0)>=PASS, desc:lensDesc(2,data.lens_2_earnings_inflection) },
+    { name:'Demand Rider',       score:(data.lens_3_demand_rider?.score||0)*100,        pass:(data.lens_3_demand_rider?.score||0)>=PASS,        desc:lensDesc(3,data.lens_3_demand_rider) },
+    { name:'Float Mechanics',    score:(data.lens_4_float_mechanics?.score||0)*100,     pass:(data.lens_4_float_mechanics?.score||0)>=PASS,     desc:lensDesc(4,data.lens_4_float_mechanics) },
+    { name:'Smart Money',        score:(data.lens_5_smart_money?.score||0)*100,         pass:(data.lens_5_smart_money?.score||0)>=PASS,         desc:lensDesc(5,data.lens_5_smart_money) },
+  ];
+}
+
+/* ── Build lens cards ───────────────────────────────────── */
+function buildCards(lenses) {
+  const g = document.getElementById('grid');
+  g.innerHTML = '';
+  lenses.forEach((l, i) => {
+    const card = document.createElement('div');
+    card.className = 'card ' + (l.pass ? 'pass' : 'fail');
+    card.id = 'c' + i;
+    const isLast = i === 4;
+    card.innerHTML = isLast ? `
+      <div class="last-inner">
+        <div>
+          <div class="lens-id">LENS 0${i+1}</div>
+          <div class="lens-nm">${l.name}</div>
+          <div class="lens-desc" style="margin-top:6px">${l.desc}</div>
+        </div>
+        <div>
+          <div class="bar-track" style="margin-bottom:14px"><div class="bar-fill" id="b${i}"></div></div>
+          <div class="card-bot">
+            <div><div class="score-lbl">Score</div><div class="score-big" id="n${i}">0</div></div>
+            <div class="badge">${l.pass?'PASS':'FAIL'}</div>
+          </div>
+        </div>
+      </div>` : `
+      <div class="card-top">
+        <div><div class="lens-id">LENS 0${i+1}</div><div class="lens-nm">${l.name}</div></div>
+        <div class="badge">${l.pass?'PASS':'FAIL'}</div>
+      </div>
+      <div class="lens-desc">${l.desc}</div>
+      <div class="bar-track"><div class="bar-fill" id="b${i}"></div></div>
+      <div class="card-bot">
+        <div><div class="score-lbl">Score</div><div class="score-big" id="n${i}">0</div></div>
+      </div>`;
+    g.appendChild(card);
+  });
+}
+
+/* ── Animate in ─────────────────────────────────────────── */
+function animateIn(data) {
+  const lenses = mapLenses(data);
+  const passes = data.active_lenses ?? lenses.filter(l=>l.pass).length;
+  const score = Math.round((data.composite_score||0)*100);
+  const v = verdict(passes, score);
+
+  // Meta bar
+  document.getElementById('sname').textContent = data.company_name || data.ticker || '—';
+  document.getElementById('smcap').textContent = fmtMcap(data.market_cap_usd);
+  const tierEl = document.getElementById('stier');
+  tierEl.textContent = data.conviction_tier || '—';
+  tierEl.className = 'stock-tier ' + tierClass(data.conviction_tier);
+  document.getElementById('snotes').textContent = data.screening_notes || '—';
+
+  // Left panel
+  document.getElementById('overall').textContent = '0';
+  document.getElementById('pcount').textContent = '0';
+  document.getElementById('vtext').textContent = v.text;
+  const fv = document.getElementById('fverdict');
+  fv.textContent = v.label; fv.className = 'fverdict ' + v.cls;
+  document.getElementById('fscan').textContent = 'Last scan: ' + (data.screened_at ? new Date(data.screened_at).toUTCString().slice(17,25) + ' UTC' : '—');
+
+  buildCards(lenses);
+
+  // GSAP — stagger cards
+  const cards = document.querySelectorAll('.card');
+  gsap.to(cards, { opacity:1, y:0, duration:0.45, stagger:0.08, ease:'power3.out',
+    onComplete(){ busy = false; } });
+
+  // GSAP — bar fills + score count-ups
+  lenses.forEach((l,i) => {
+    gsap.to('#b'+i, { width:l.score+'%', duration:0.85, delay:i*0.08+0.25, ease:'power2.out' });
+    const el = document.getElementById('n'+i);
+    gsap.to({v:0},{v:l.score, duration:0.85, delay:i*0.08+0.25, ease:'power2.out',
+      onUpdate(){ el.textContent = Math.round(this.targets()[0].v); }});
+  });
+
+  // GSAP — overall score count + arc
+  gsap.to({v:0},{v:score, duration:1.1, delay:0.35, ease:'power2.out',
+    onUpdate(){ document.getElementById('overall').textContent = Math.round(this.targets()[0].v); }});
+  gsap.to({v:0},{v:passes, duration:0.9, delay:0.5, ease:'power2.out',
+    onUpdate(){ document.getElementById('pcount').textContent = Math.round(this.targets()[0].v); }});
+  gsap.fromTo('#arc',{strokeDashoffset:210},{strokeDashoffset:210-(score/100*210), duration:1.1, delay:0.3, ease:'power2.out'});
+}
+
+/* ── Show states ────────────────────────────────────────── */
+function showLoading(msg) {
+  document.getElementById('grid').innerHTML = `
+    <div class="state-box">
+      <div class="spinner"></div>
+      <div class="state-title">Scanning</div>
+      <div class="state-sub">${msg||'Fetching lens data from engine&hellip;'}</div>
+    </div>`;
+}
+function showError(msg) {
+  document.getElementById('grid').innerHTML = `
+    <div class="state-box">
+      <div class="state-icon">⊘</div>
+      <div class="state-title">No Data</div>
+      <div class="state-sub">${msg}</div>
+    </div>`;
+}
+
+/* ── Load watchlist ─────────────────────────────────────── */
+async function loadWatchlist() {
+  try {
+    const res = await fetch(API + '/1000x/watchlist?limit=8');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const list = await res.json();
+    const wlEl = document.getElementById('wl-btns');
+    if (!list.length) {
+      wlEl.innerHTML = '<span style="font-size:9px;color:var(--t2)">Screener empty — run batch first</span>';
+      showError('No screened stocks yet.<br>The screener-1000x batch runs daily.');
+      return;
+    }
+    wlEl.innerHTML = list.map(s =>
+      `<button class="wl-btn ${s.conviction_tier==='CONVICTION'?'conviction':''}"
+        data-t="${s.ticker}" onclick="loadTicker('${s.ticker}')">${s.ticker}</button>`
+    ).join('');
+    // Auto-load first
+    await loadTicker(list[0].ticker);
+  } catch(e) {
+    document.getElementById('wl-btns').innerHTML = '<span style="font-size:9px;color:var(--fail)">API unreachable</span>';
+    showError('Could not reach Alpha0Engine API.<br><span style="font-size:8px">' + e.message + '</span>');
+  }
+}
+
+/* ── Load individual ticker ─────────────────────────────── */
+async function loadTicker(ticker) {
+  if (busy || ticker === currentTicker) return;
+  busy = true;
+  currentTicker = ticker;
+
+  // Update button highlights
+  document.querySelectorAll('.wl-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.t === ticker));
+
+  // Fade out existing cards
+  const existing = document.querySelectorAll('.card');
+  if (existing.length) {
+    await new Promise(r => gsap.to(existing, { opacity:0, y:-10, duration:0.22, stagger:0.03, ease:'power2.in', onComplete:r }));
+  }
+
+  showLoading('Loading ' + ticker.toUpperCase() + '&hellip;');
+
+  try {
+    const res = await fetch(API + '/1000x/' + ticker.toUpperCase());
+    if (res.status === 404) {
+      showError(ticker.toUpperCase() + ' not in screener.<br>Run a batch scan to include this ticker.');
+      busy = false;
+      return;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    animateIn(data);
+  } catch(e) {
+    showError('Failed to load ' + ticker.toUpperCase() + '.<br>' + e.message);
+    busy = false;
+  }
+}
+
+/* ── Search ─────────────────────────────────────────────── */
+function doSearch() {
+  const val = document.getElementById('search').value.trim().toUpperCase();
+  if (!val) return;
+  document.getElementById('search').value = '';
+  currentTicker = null; // force reload even if same
+  loadTicker(val);
+}
+
+/* ── Clock ──────────────────────────────────────────────── */
+function tick() { document.getElementById('clock').textContent = new Date().toUTCString().slice(17,25); }
+setInterval(tick, 1000); tick();
+
+/* ── Init ───────────────────────────────────────────────── */
+loadWatchlist();
+</script>
+</body>
+</html>

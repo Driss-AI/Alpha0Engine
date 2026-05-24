@@ -1,5 +1,5 @@
 """
-Alpha0Engine — FastAPI Gateway v0.4.0
+Alpha0Engine — FastAPI Gateway v0.5.0
 Serves API endpoints + web dashboard at root.
 """
 import sys, os
@@ -39,12 +39,22 @@ app.add_middleware(
 )
 
 DASHBOARD_HTML = Path(__file__).parent / "static" / "dashboard.html"
+SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
+
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root():
     if DASHBOARD_HTML.exists():
         return HTMLResponse(DASHBOARD_HTML.read_text())
     return HTMLResponse("<h1>Alpha0Engine</h1><p>Dashboard loading...</p>")
+
+
+@app.get("/screener", response_class=HTMLResponse, include_in_schema=False)
+async def screener():
+    if SCREENER_HTML.exists():
+        return HTMLResponse(SCREENER_HTML.read_text())
+    return HTMLResponse("<h1>1000x Screener</h1><p>UI not found.</p>")
+
 
 app.include_router(health.router)
 app.include_router(dashboard.router, prefix="/api/v1")
