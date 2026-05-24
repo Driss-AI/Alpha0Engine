@@ -302,11 +302,16 @@ async def run_screening_batch():
 
 async def run_loop():
     """Run screening on a daily loop."""
+    import time as _time
+    from shared.clients.heartbeat import report_heartbeat
     while True:
+        _start = _time.time()
         try:
             await run_screening_batch()
+            await report_heartbeat("screener-1000x", duration_seconds=_time.time()-_start, interval_hours=24)
         except Exception as e:
             logger.error(f"Screening batch failed: {e}")
+            await report_heartbeat("screener-1000x", error=str(e), interval_hours=24)
         logger.info("Next 1000x screening run in 24 hours...")
         await asyncio.sleep(86400)
 

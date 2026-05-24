@@ -281,11 +281,16 @@ async def run_8k_ingestion():
 
 async def run_loop():
     """Run every 6 hours during weekdays, daily on weekends."""
+    import time as _time
+    from shared.clients.heartbeat import report_heartbeat
     while True:
+        _start = _time.time()
         try:
             await run_8k_ingestion()
+            await report_heartbeat("ingest-8k", duration_seconds=_time.time()-_start, interval_hours=6)
         except Exception as e:
             logger.error(f"8-K ingestion failed: {e}")
+            await report_heartbeat("ingest-8k", error=str(e), interval_hours=6)
 
         now = datetime.utcnow()
         if now.weekday() < 5:  # Weekday

@@ -332,11 +332,16 @@ async def run_form4_ingestion():
 
 async def run_loop():
     """Daily loop."""
+    import time as _time
+    from shared.clients.heartbeat import report_heartbeat
     while True:
+        _start = _time.time()
         try:
             await run_form4_ingestion()
+            await report_heartbeat("ingest-form4", duration_seconds=_time.time()-_start, interval_hours=24)
         except Exception as e:
             logger.error(f"Form 4 ingestion failed: {e}")
+            await report_heartbeat("ingest-form4", error=str(e), interval_hours=24)
         logger.info("Next Form 4 ingestion in 24 hours...")
         await asyncio.sleep(86400)
 

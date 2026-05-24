@@ -6,6 +6,7 @@ from .fundamentals import FundamentalScore, FundamentalScoreCreate, FundamentalS
 from .risk import RiskAssessment, RiskAssessmentCreate, RiskAssessmentRead
 from .equity_screen import EquityScreen, EquityScreenCreate, EquityScreenRead
 from .daily_prices import DailyPrice, DailyPriceCreate, DailyPriceRead, PriceSnapshot
+from .pipeline_health import PipelineHealth, PipelineHealthRead
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -16,4 +17,5 @@ __all__ = [
     "RiskAssessment", "RiskAssessmentCreate", "RiskAssessmentRead",
     "EquityScreen", "EquityScreenCreate", "EquityScreenRead",
     "DailyPrice", "DailyPriceCreate", "DailyPriceRead", "PriceSnapshot",
+    "PipelineHealth", "PipelineHealthRead",
 ]

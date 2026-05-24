@@ -182,11 +182,12 @@ async function api(path) {
 // ═══════════════════════════════════════════════════
 async function loadOverview() {
   try {
-    const [dash, screenSum, riskSum, kxSum] = await Promise.all([
+    const [dash, screenSum, riskSum, kxSum, pipeHealth] = await Promise.all([
       api('/api/v1/dashboard'),
       api('/api/v1/screener/summary').catch(() => null),
       api('/api/v1/risk-summary').catch(() => null),
       api('/api/v1/1000x/summary').catch(() => null),
+      api('/api/v1/pipelines').catch(() => null),
     ]);
     $('#statusDot').className = 'pulse';
     const s = dash.summary || {};
@@ -277,7 +278,32 @@ async function loadOverview() {
             </div>
           `).join('')}
         </div>
-      </div>`;
+      </div>
+
+      ${pipeHealth && pipeHealth.pipelines && pipeHealth.pipelines.length ? `
+      <div class="card" style="margin-top:24px">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Pipeline Health</span>
+          <span style="font-family:var(--mono);font-size:11px;font-weight:600;color:${
+            pipeHealth.system_status==='healthy'?'var(--green)':
+            pipeHealth.system_status==='warning'?'var(--yellow)':'var(--red)'
+          }">${pipeHealth.system_status?.toUpperCase()}</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+          ${pipeHealth.pipelines.map(p => {
+            const col = p.status==='ok'?'var(--green)':p.status==='warning'?'var(--yellow)':p.status==='error'?'var(--red)':p.status==='stale'?'var(--orange)':'var(--text3)';
+            const ago = p.hours_since_run != null ? (p.hours_since_run < 1 ? '<1h ago' : p.hours_since_run.toFixed(0)+'h ago') : 'never';
+            return `<div style="background:var(--surface2);border-radius:8px;padding:12px;border-left:3px solid ${col}">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <div style="font-family:var(--mono);font-size:11px;font-weight:600">${p.pipeline}</div>
+                <div style="font-family:var(--mono);font-size:10px;font-weight:700;color:${col}">${p.status.toUpperCase()}</div>
+              </div>
+              <div style="font-family:var(--mono);font-size:10px;color:var(--text3)">${ago} · ${p.run_count||0} runs · ${p.error_count||0} errors</div>
+              ${p.last_error ? `<div style="font-size:10px;color:var(--red);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.last_error}</div>` : ''}
+            </div>`;
+          }).join('')}
+        </div>
+      </div>` : ''}`;
     $('#sec-overview').innerHTML = html;
   } catch(e) {
     $('#statusDot').className = 'pulse off';

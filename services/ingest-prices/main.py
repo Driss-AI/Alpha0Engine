@@ -360,8 +360,12 @@ async def run_loop():
       - Every day: price ingestion
       - Every Sunday: universe discovery (find new micro-caps)
     """
+    import time as _time
+    from shared.clients.heartbeat import report_heartbeat
+
     cycle = 0
     while True:
+        _start = _time.time()
         try:
             today = datetime.utcnow()
 
@@ -373,8 +377,12 @@ async def run_loop():
             # Daily price ingestion
             await run_price_ingestion()
 
+            _dur = _time.time() - _start
+            await report_heartbeat("ingest-prices", records=0, duration_seconds=_dur, interval_hours=24)
+
         except Exception as e:
             logger.error(f"Price ingestion cycle failed: {e}")
+            await report_heartbeat("ingest-prices", error=str(e), interval_hours=24)
 
         cycle += 1
 
