@@ -17,6 +17,7 @@ import sys
 import asyncio
 import logging
 from datetime import datetime, date, timedelta
+from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -131,8 +132,9 @@ async def propagate_market_caps(
     shares: float,
     latest_close: float,
     avg_vol_30d: float,
+    short_data: Optional[dict] = None,
 ):
-    """Push real market cap into fundamental_scores and equity_screens."""
+    """Push real market cap + short interest into scoring tables."""
     # Update fundamental_scores
     fs = (await session.exec(
         select(FundamentalScore).where(FundamentalScore.entity_id == entity_id)
@@ -142,13 +144,22 @@ async def propagate_market_caps(
         fs.updated_at = datetime.utcnow()
         session.add(fs)
 
-    # Update equity_screens
+    # Update equity_screens with market cap + short interest
     es = (await session.exec(
         select(EquityScreen).where(EquityScreen.entity_id == entity_id)
     )).first()
     if es:
         es.market_cap_usd = mcap
         es.shares_outstanding = shares
+        if short_data:
+            if short_data.get("float_shares"):
+                es.float_shares = short_data["float_shares"]
+            if short_data.get("shares_short"):
+                es.short_interest = short_data["shares_short"]
+            if short_data.get("short_pct_float"):
+                es.short_pct_float = short_data["short_pct_float"]
+            if short_data.get("short_ratio"):
+                es.days_to_cover = short_data["short_ratio"]
         es.updated_at = datetime.utcnow()
         session.add(es)
 
@@ -213,16 +224,23 @@ async def run_price_ingestion():
                 )
                 total_stored += stored
 
-                # Propagate market cap to scoring tables
+                # Propagate market cap + short interest to scoring tables
                 mcap = mcap_info.get("market_cap")
                 shares = mcap_info.get("shares_outstanding")
                 if mcap and records:
                     latest = records[-1]
+                    short_data = {
+                        "float_shares": mcap_info.get("float_shares"),
+                        "shares_short": mcap_info.get("shares_short"),
+                        "short_pct_float": mcap_info.get("short_pct_float"),
+                        "short_ratio": mcap_info.get("short_ratio"),
+                    }
                     await propagate_market_caps(
                         session, ticker, entity.id,
                         mcap, shares or 0,
                         latest.get("close", 0),
                         latest.get("avg_volume_30d", 0),
+                        short_data=short_data,
                     )
                     propagated += 1
 

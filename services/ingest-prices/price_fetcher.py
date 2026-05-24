@@ -165,6 +165,11 @@ def fetch_market_caps(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
                     "sector": info.get("sector"),
                     "industry": info.get("industry"),
                     "company_name": info.get("shortName") or info.get("longName"),
+                    # Short interest data (Lens 4: Float Mechanics)
+                    "shares_short": info.get("sharesShort"),
+                    "short_pct_float": info.get("shortPercentOfFloat"),
+                    "short_ratio": info.get("shortRatio"),  # days to cover
+                    "float_shares": info.get("floatShares"),
                 }
             # Rate limit: 1 req/sec to avoid Yahoo 429s
             time.sleep(1.0)

@@ -108,6 +108,7 @@ def detect_catalysts_from_signals(signals: List[Dict[str, Any]]) -> List[Dict[st
         "form_d": "partnership_announcement",
         "clinical_trial": "clinical_trial_data",
         "fda_catalyst": "fda_approval",
+        "8k_event": "regulatory_approval",  # Overridden by keyword detection below
         "sec_13f": None,  # Not a catalyst
         "github_star": None,
         "github_commit": None,
