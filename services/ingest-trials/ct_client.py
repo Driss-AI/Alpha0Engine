@@ -166,21 +166,17 @@ async def search_trials(
         "pageSize": min(page_size, 100),
     }
 
-    # Build filter
-    filters = []
+    # Build filters as separate params (CT.gov v2 API syntax)
     if phases:
-        filters.append(f"phase:{','.join(phases)}")
+        params["filter.phase"] = ",".join(phases)
     if statuses:
-        filters.append(f"overallStatus:{','.join(statuses)}")
+        params["filter.overallStatus"] = ",".join(statuses)
     if sponsor:
         params["query.spons"] = sponsor
     if condition:
         params["query.cond"] = condition
     if intervention:
         params["query.intr"] = intervention
-
-    if filters:
-        params["filter.advanced"] = " AND ".join(filters)
 
     all_studies = []
 
