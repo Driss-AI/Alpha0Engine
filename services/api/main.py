@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from shared.clients.postgres import create_db_and_tables
-from routers import health, entities, signals, themes, ipo, dashboard, fundamentals, risk
+from routers import health, entities, signals, themes, ipo, dashboard, fundamentals, risk, screener_1000x
 
 
 @asynccontextmanager
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Alpha0Engine API",
     description="Asymmetric return screening engine — pre-IPO to early public market intelligence.",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
 )
 
@@ -54,3 +54,4 @@ app.include_router(themes.router, prefix="/api/v1")
 app.include_router(ipo.router, prefix="/api/v1")
 app.include_router(fundamentals.router, prefix="/api/v1")
 app.include_router(risk.router, prefix="/api/v1")
+app.include_router(screener_1000x.router, prefix="/api/v1")

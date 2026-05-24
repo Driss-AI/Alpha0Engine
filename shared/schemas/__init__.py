@@ -4,6 +4,7 @@ from .themes import Theme, ThemeCreate, ThemeRead, ThemeEntity
 from .embeddings import Embedding
 from .fundamentals import FundamentalScore, FundamentalScoreCreate, FundamentalScoreRead
 from .risk import RiskAssessment, RiskAssessmentCreate, RiskAssessmentRead
+from .equity_screen import EquityScreen, EquityScreenCreate, EquityScreenRead
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -12,4 +13,5 @@ __all__ = [
     "Embedding",
     "FundamentalScore", "FundamentalScoreCreate", "FundamentalScoreRead",
     "RiskAssessment", "RiskAssessmentCreate", "RiskAssessmentRead",
+    "EquityScreen", "EquityScreenCreate", "EquityScreenRead",
 ]

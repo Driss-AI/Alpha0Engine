@@ -17,6 +17,7 @@
   --orange: #ff8c42; --orange-bg: rgba(255,140,66,0.08);
   --blue: #3b82f6; --blue-bg: rgba(59,130,246,0.08);
   --pink: #ec4899;
+  --cyan: #06b6d4; --cyan-bg: rgba(6,182,212,0.08);
   --mono: 'IBM Plex Mono', monospace;
   --sans: 'DM Sans', sans-serif;
 }
@@ -34,18 +35,21 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
 .version { font-family:var(--mono); font-size:10px; color:var(--text3); background:rgba(255,255,255,.04); padding:3px 8px; border-radius:4px; }
 .clock { font-family:var(--mono); font-size:11px; color:var(--text3); }
 
-.nav { display:flex; gap:0; padding:0 24px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:53px; z-index:99; }
-.nav-btn { background:none; border:none; color:var(--text2); font-family:var(--sans); font-size:13px; font-weight:500; padding:12px 18px; cursor:pointer; border-bottom:2px solid transparent; transition:all .2s; }
+.nav { display:flex; gap:0; padding:0 24px; border-bottom:1px solid var(--border); background:var(--surface); position:sticky; top:53px; z-index:99; overflow-x:auto; }
+.nav-btn { background:none; border:none; color:var(--text2); font-family:var(--sans); font-size:13px; font-weight:500; padding:12px 18px; cursor:pointer; border-bottom:2px solid transparent; transition:all .2s; white-space:nowrap; }
 .nav-btn:hover { color:var(--text); }
 .nav-btn.active { color:#fff; border-bottom-color:var(--accent); }
+.nav-btn.hot { color:var(--yellow); }
+.nav-btn.hot.active { border-bottom-color:var(--yellow); }
 
 .main { padding:20px 24px 40px; max-width:1320px; margin:0 auto; }
 .section { display:none; } .section.active { display:block; }
+.grid-5 { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:24px; }
 .grid-4 { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px; }
 .grid-3 { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
 .grid-2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@media(max-width:900px) { .grid-4,.grid-3 { grid-template-columns:repeat(2,1fr); } .grid-2 { grid-template-columns:1fr; } }
-@media(max-width:600px) { .grid-4 { grid-template-columns:1fr 1fr; } }
+@media(max-width:900px) { .grid-5,.grid-4,.grid-3 { grid-template-columns:repeat(2,1fr); } .grid-2 { grid-template-columns:1fr; } }
+@media(max-width:600px) { .grid-5,.grid-4 { grid-template-columns:1fr 1fr; } }
 
 .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px 20px; }
 .card-sm { padding:14px 16px; }
@@ -63,6 +67,11 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
 .risk-YELLOW { background:var(--yellow-bg); color:var(--yellow); }
 .risk-ORANGE { background:var(--orange-bg); color:var(--orange); }
 .risk-RED { background:var(--red-bg); color:var(--red); }
+.conv-CONVICTION { background:rgba(0,214,143,.15); color:var(--green); border:1px solid rgba(0,214,143,.25); }
+.conv-HIGH { background:rgba(59,130,246,.12); color:var(--blue); }
+.conv-WATCH { background:rgba(255,178,36,.12); color:var(--yellow); }
+.conv-SPECULATIVE { background:rgba(255,140,66,.12); color:var(--orange); }
+.conv-PASS { background:rgba(255,255,255,.04); color:var(--text3); }
 
 .table { width:100%; border-collapse:collapse; }
 .table th { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:1.2px; color:var(--text3); text-align:left; padding:10px 12px; border-bottom:1px solid var(--border2); font-weight:500; }
@@ -85,6 +94,12 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
 .bar-track { height:5px; background:rgba(255,255,255,.04); border-radius:3px; overflow:hidden; }
 .bar-fill { height:100%; border-radius:3px; transition:width .8s ease; }
 
+.lens-grid { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-bottom:16px; }
+.lens-pill { text-align:center; padding:10px 6px; border-radius:8px; background:var(--surface2); border:1px solid var(--border); }
+.lens-pill .lens-name { font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:1px; color:var(--text3); margin-bottom:4px; }
+.lens-pill .lens-val { font-family:var(--mono); font-size:16px; font-weight:700; }
+@media(max-width:700px) { .lens-grid { grid-template-columns:repeat(3,1fr); } }
+
 .loading { text-align:center; padding:60px 20px; color:var(--text3); }
 .spinner { width:24px; height:24px; border:2px solid var(--border2); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; margin:0 auto 12px; }
 @keyframes spin { to { transform:rotate(360deg); } }
@@ -103,7 +118,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
   <div class="logo-group">
     <div class="pulse" id="statusDot"></div>
     <div class="logo">Alpha0<span>Engine</span></div>
-    <div class="version">v0.4.0</div>
+    <div class="version">v0.5.0</div>
   </div>
   <div class="clock" id="clock"></div>
 </div>
@@ -111,6 +126,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
 <div class="nav">
   <button class="nav-btn active" data-tab="overview">Overview</button>
   <button class="nav-btn" data-tab="screener">Screener</button>
+  <button class="nav-btn hot" data-tab="1000x">1000x Screener</button>
   <button class="nav-btn" data-tab="risk">Risk Radar</button>
   <button class="nav-btn" data-tab="signals">Signals</button>
   <button class="nav-btn" data-tab="ipo">IPO Tracker</button>
@@ -119,6 +135,7 @@ body { background:var(--bg); color:var(--text); font-family:var(--sans); min-hei
 <div class="main">
   <div class="section active" id="sec-overview"><div class="loading"><div class="spinner"></div>Connecting to engine...</div></div>
   <div class="section" id="sec-screener"><div class="loading"><div class="spinner"></div>Loading screener...</div></div>
+  <div class="section" id="sec-1000x"><div class="loading"><div class="spinner"></div>Loading 1000x screener...</div></div>
   <div class="section" id="sec-risk"><div class="loading"><div class="spinner"></div>Loading risk data...</div></div>
   <div class="section" id="sec-signals"><div class="loading"><div class="spinner"></div>Loading signals...</div></div>
   <div class="section" id="sec-ipo"><div class="loading"><div class="spinner"></div>Loading IPO candidates...</div></div>
@@ -135,7 +152,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.add('active');
     $$('.section').forEach(s => s.classList.remove('active'));
     $(`#sec-${btn.dataset.tab}`).classList.add('active');
-    const loaders = { screener: loadScreener, risk: loadRisk, signals: loadSignals, ipo: loadIPO };
+    const loaders = { screener: loadScreener, '1000x': load1000x, risk: loadRisk, signals: loadSignals, ipo: loadIPO };
     if (loaders[btn.dataset.tab]) loaders[btn.dataset.tab]();
   });
 });
@@ -145,11 +162,14 @@ setInterval(tick, 1000); tick();
 
 function tierBadge(t) { return `<span class="tier tier-${t}">${t}</span>`; }
 function riskBadge(t) { return `<span class="tier risk-${t}">${t}</span>`; }
+function convBadge(t) { return `<span class="tier conv-${t}">${t}</span>`; }
 function pct(v) { return v != null ? (v*100).toFixed(1)+'%' : '\u2014'; }
 function num(v) { return v != null ? v.toLocaleString() : '\u2014'; }
-function usd(v) { if(!v) return '\u2014'; if(v>=1e9) return '$'+(v/1e9).toFixed(1)+'B'; if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M'; return '$'+v.toLocaleString(); }
+function usd(v) { if(!v) return '\u2014'; if(v>=1e9) return '$'+(v/1e9).toFixed(1)+'B'; if(v>=1e6) return '$'+(v/1e6).toFixed(1)+'M'; if(v>=1e3) return '$'+(v/1e3).toFixed(0)+'K'; return '$'+v.toLocaleString(); }
 function score(v) { return v != null ? v.toFixed(3) : '\u2014'; }
+function lensColor(v) { if(v>=0.6) return 'var(--green)'; if(v>=0.3) return 'var(--yellow)'; return 'var(--text3)'; }
 const typeColors = {github_star:'#ffb224',github_commit:'#eab308',crossover_filing:'#00d68f',form_d:'#3b82f6',sec_13f:'#635bff',patent_grant:'#ec4899',patent_filing:'#f472b6',news_mention:'#8b5cf6',job_posting:'#06b6d4',secondary_trade:'#f97316',citation:'#a78bfa'};
+const lensNames = ['Catalyst','Earnings','Demand','Float','Smart $'];
 
 async function api(path) {
   const r = await fetch(API + path);
@@ -162,10 +182,11 @@ async function api(path) {
 // ═══════════════════════════════════════════════════
 async function loadOverview() {
   try {
-    const [dash, screenSum, riskSum] = await Promise.all([
+    const [dash, screenSum, riskSum, kxSum] = await Promise.all([
       api('/api/v1/dashboard'),
       api('/api/v1/screener/summary').catch(() => null),
       api('/api/v1/risk-summary').catch(() => null),
+      api('/api/v1/1000x/summary').catch(() => null),
     ]);
     $('#statusDot').className = 'pulse';
     const s = dash.summary || {};
@@ -174,23 +195,32 @@ async function loadOverview() {
     const companies = dash.top_companies || [];
     const sc = screenSum || {};
     const rs = riskSum || {};
+    const kx = kxSum || {};
     const tiers = sc.tier_breakdown || {};
     const riskTiers = rs.tier_breakdown || {};
+    const kxTiers = kx.tier_breakdown || {};
     const maxT = Math.max(...Object.values(types), 1);
 
     let html = `
-      <div class="grid-4">
+      <div class="grid-5">
         <div class="card card-sm"><div class="card-title">Companies</div><div class="big-num">${s.companies_tracked||0}</div><div class="big-sub">${s.private||0} private &middot; ${s.public||0} public</div></div>
         <div class="card card-sm"><div class="card-title">Signals</div><div class="big-num" style="color:var(--accent)">${num(s.total_signals)}</div><div class="big-sub">${num(s.signals_this_week)} this week</div></div>
-        <div class="card card-sm"><div class="card-title">Screened</div><div class="big-num" style="color:var(--green)">${sc.total_screened||0}</div><div class="big-sub">avg score ${score(sc.avg_fundamental_score)}</div></div>
+        <div class="card card-sm"><div class="card-title">Screened</div><div class="big-num" style="color:var(--green)">${sc.total_screened||0}</div><div class="big-sub">avg ${score(sc.avg_fundamental_score)}</div></div>
+        <div class="card card-sm"><div class="card-title">1000x Watchlist</div><div class="big-num" style="color:var(--yellow)">${kx.watchlist_count||0}</div><div class="big-sub">${kx.total_screened||0} screened</div></div>
         <div class="card card-sm"><div class="card-title">Risk Alerts</div><div class="big-num" style="color:${(rs.hype_flagged||0)+(rs.illiquidity_flagged||0)>0?'var(--red)':'var(--green)'}">${(rs.hype_flagged||0)+(rs.illiquidity_flagged||0)}</div><div class="big-sub">${rs.hype_flagged||0} hype &middot; ${rs.illiquidity_flagged||0} illiquid</div></div>
       </div>
 
-      <div class="grid-2" style="margin-bottom:24px">
+      <div class="grid-3" style="margin-bottom:24px">
         <div class="card">
           <div class="card-title">Screening Tiers</div>
           <div style="display:flex;gap:16px;flex-wrap:wrap">
             ${['S','A','B','C','D'].map(t => `<div style="text-align:center"><div style="font-size:24px;font-weight:700;margin-bottom:4px">${tiers[t]||0}</div>${tierBadge(t)}</div>`).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">1000x Conviction Tiers</div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            ${['CONVICTION','HIGH','WATCH','SPECULATIVE','PASS'].map(t => `<div style="text-align:center"><div style="font-size:20px;font-weight:700;margin-bottom:4px">${kxTiers[t]||0}</div>${convBadge(t)}</div>`).join('')}
           </div>
         </div>
         <div class="card">
@@ -200,6 +230,22 @@ async function loadOverview() {
           </div>
         </div>
       </div>
+
+      ${kx.top_picks && kx.top_picks.length ? `
+      <div class="card" style="margin-bottom:24px">
+        <div class="card-title" style="color:var(--yellow)">&#9733; 1000x Top Picks</div>
+        <table class="table"><thead><tr><th>Ticker</th><th>Company</th><th>Conviction</th><th>Score</th><th>Lenses</th><th>Top Lens</th><th>Notes</th></tr></thead><tbody>
+        ${kx.top_picks.map(p => `<tr>
+          <td class="mono" style="font-weight:700;color:var(--yellow)">${p.ticker||'\u2014'}</td>
+          <td class="name">${p.company_name||'\u2014'}</td>
+          <td>${convBadge(p.conviction_tier)}</td>
+          <td class="mono" style="font-weight:700">${score(p.composite_score)}</td>
+          <td class="mono">${p.active_lenses}/5</td>
+          <td style="font-size:11px">${p.top_lens||'\u2014'}</td>
+          <td style="font-size:11px;color:var(--text2);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.screening_notes||''}</td>
+        </tr>`).join('')}
+        </tbody></table>
+      </div>` : ''}
 
       <div class="grid-2">
         <div class="card">
@@ -240,7 +286,7 @@ async function loadOverview() {
 }
 
 // ═══════════════════════════════════════════════════
-// SCREENER
+// SCREENER (Module 3)
 // ═══════════════════════════════════════════════════
 let screenFilter = '';
 async function loadScreener() {
@@ -280,6 +326,93 @@ async function loadScreener() {
     if (!data || data.length === 0) html += '<div class="empty">No screened companies yet. The screener runs daily.</div>';
     $('#sec-screener').innerHTML = html;
   } catch(e) { $('#sec-screener').innerHTML = `<div class="loading" style="color:var(--red)">Error: ${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════
+// 1000x SCREENER (Module 5)
+// ═══════════════════════════════════════════════════
+let kxFilter = '';
+let kxView = 'all'; // 'all' or 'watchlist'
+async function load1000x() {
+  try {
+    const [summary, data] = await Promise.all([
+      api('/api/v1/1000x/summary').catch(()=>({})),
+      kxView === 'watchlist'
+        ? api('/api/v1/1000x/watchlist?limit=50')
+        : api(kxFilter ? `/api/v1/1000x?tier=${kxFilter}&limit=100` : '/api/v1/1000x?limit=100'),
+    ]);
+    const sm = summary || {};
+    const tiers = sm.tier_breakdown || {};
+    const lensDist = sm.lens_distribution || {};
+    const maxLens = Math.max(...Object.values(lensDist), 1);
+
+    let html = `
+      <div class="grid-4" style="margin-bottom:20px">
+        <div class="card card-sm"><div class="card-title">Screened</div><div class="big-num">${sm.total_screened||0}</div><div class="big-sub">avg score ${score(sm.avg_composite_score)}</div></div>
+        <div class="card card-sm"><div class="card-title">Watchlist</div><div class="big-num" style="color:var(--yellow)">${sm.watchlist_count||0}</div><div class="big-sub">CONVICTION + HIGH</div></div>
+        <div class="card card-sm"><div class="card-title">Conviction</div><div class="big-num" style="color:var(--green)">${tiers.CONVICTION||0}</div><div class="big-sub">highest tier</div></div>
+        <div class="card card-sm"><div class="card-title">High</div><div class="big-num" style="color:var(--blue)">${tiers.HIGH||0}</div><div class="big-sub">deep dive candidates</div></div>
+      </div>
+
+      <div class="grid-2" style="margin-bottom:20px">
+        <div class="card">
+          <div class="card-title">Conviction Tiers</div>
+          <div style="display:flex;gap:14px;flex-wrap:wrap">
+            ${['CONVICTION','HIGH','WATCH','SPECULATIVE','PASS'].map(t => `<div style="text-align:center"><div style="font-size:22px;font-weight:700;margin-bottom:4px">${tiers[t]||0}</div>${convBadge(t)}</div>`).join('')}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Top Lens Distribution</div>
+          ${Object.entries(lensDist).sort((a,b)=>b[1]-a[1]).map(([l,c])=>{
+            const cols = {'Binary Catalyst':'var(--red)','Earnings Inflection':'var(--green)','Demand Rider':'var(--cyan)','Float Mechanics':'var(--orange)','Smart Money':'var(--accent)'};
+            const col = cols[l]||'var(--accent)';
+            return `<div class="bar-row"><div class="bar-head"><span class="bar-label">${l}</span><span class="bar-val" style="color:${col}">${c}</span></div><div class="bar-track"><div class="bar-fill" style="width:${c/maxLens*100}%;background:${col}"></div></div></div>`;
+          }).join('')}
+        </div>
+      </div>
+
+      <div class="filters">
+        <span class="filter-label">View</span>
+        <button class="filter-btn ${kxView==='all'?'active':''}" onclick="kxView='all';kxFilter='';load1000x()">All</button>
+        <button class="filter-btn ${kxView==='watchlist'?'active':''}" onclick="kxView='watchlist';load1000x()">&#9733; Watchlist</button>
+        <span style="width:16px"></span>
+        <span class="filter-label">Tier</span>
+        ${['CONVICTION','HIGH','WATCH','SPECULATIVE','PASS'].map(t => `<button class="filter-btn ${kxFilter===t?'active':''}" onclick="kxFilter='${t}';kxView='all';load1000x()">${t}</button>`).join('')}
+        <button class="filter-btn ${kxFilter===''&&kxView==='all'?'active':''}" onclick="kxFilter='';kxView='all';load1000x()">All</button>
+      </div>
+
+      <div class="card" style="overflow-x:auto">
+        <table class="table">
+          <thead><tr>
+            <th>Ticker</th><th>Company</th><th>Tier</th><th>Score</th><th>Lenses</th>
+            <th>Catalyst</th><th>Earnings</th><th>Demand</th><th>Float</th><th>Smart $</th>
+            <th>Mkt Cap</th><th>Top Lens</th><th>Notes</th>
+          </tr></thead>
+          <tbody>
+            ${(data||[]).map(r => {
+              const cs = r.catalyst_score||0, es = r.earnings_score||0, ds = r.demand_score||0, fs = r.float_score||0, ss = r.smart_money_score||0;
+              return `<tr>
+                <td class="mono" style="font-weight:700;color:var(--yellow)">${r.ticker||'\u2014'}</td>
+                <td class="name">${r.company_name||'\u2014'}</td>
+                <td>${convBadge(r.conviction_tier)}</td>
+                <td class="mono" style="font-weight:700">${score(r.composite_score)}</td>
+                <td class="mono">${r.active_lenses}/5</td>
+                <td class="mono" style="color:${lensColor(cs)}">${score(cs)}</td>
+                <td class="mono" style="color:${lensColor(es)}">${score(es)}</td>
+                <td class="mono" style="color:${lensColor(ds)}">${score(ds)}</td>
+                <td class="mono" style="color:${lensColor(fs)}">${score(fs)}</td>
+                <td class="mono" style="color:${lensColor(ss)}">${score(ss)}</td>
+                <td class="mono">${usd(r.market_cap_usd)}</td>
+                <td style="font-size:11px">${r.top_lens||'\u2014'}</td>
+                <td style="font-size:11px;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.screening_notes||''}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    if (!data || data.length === 0) html += '<div class="empty">No 1000x screens yet. The screener runs daily on all public entities.</div>';
+    $('#sec-1000x').innerHTML = html;
+  } catch(e) { $('#sec-1000x').innerHTML = `<div class="loading" style="color:var(--red)">Error: ${e.message}</div>`; }
 }
 
 // ═══════════════════════════════════════════════════
