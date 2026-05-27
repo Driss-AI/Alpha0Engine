@@ -14,7 +14,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from shared.clients.postgres import create_db_and_tables
-from routers import health, entities, signals, themes, ipo, dashboard, fundamentals, risk, screener_1000x, prices, pipeline_health
+from routers import (
+    health,
+    entities,
+    signals,
+    themes,
+    ipo,
+    dashboard,
+    fundamentals,
+    risk,
+    screener_1000x,
+    prices,
+    pipeline_health,
+    watchlist,
+    deep_dive,
+    deltas,
+    catalysts,
+)
 
 
 @asynccontextmanager
@@ -67,3 +83,7 @@ app.include_router(risk.router, prefix="/api/v1")
 app.include_router(screener_1000x.router, prefix="/api/v1")
 app.include_router(prices.router, prefix="/api/v1")
 app.include_router(pipeline_health.router, prefix="/api/v1")
+app.include_router(watchlist.router, prefix="/api/v1")
+app.include_router(deep_dive.router, prefix="/api/v1")
+app.include_router(deltas.router, prefix="/api/v1")
+app.include_router(catalysts.router, prefix="/api/v1")
