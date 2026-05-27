@@ -164,6 +164,9 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
   <button class="nav-btn" data-tab="risk">Risk Radar</button>
   <button class="nav-btn" data-tab="signals">Signals</button>
   <button class="nav-btn" data-tab="ipo">IPO Tracker</button>
+  <button class="nav-btn" data-tab="watchlist" style="color:var(--amber)">Watchlist</button>
+  <button class="nav-btn" data-tab="catalysts">Catalysts</button>
+  <button class="nav-btn" data-tab="deltas">Deltas</button>
   <a class="nav-ext" href="/screener" target="_blank">↗ Full Screener</a>
 </nav>
 
@@ -174,6 +177,9 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
   <div class="section" id="sec-risk"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading risk radar&hellip;</div></div></div>
   <div class="section" id="sec-signals"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading signals&hellip;</div></div></div>
   <div class="section" id="sec-ipo"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading IPO candidates&hellip;</div></div></div>
+  <div class="section" id="sec-watchlist"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading watchlist&hellip;</div></div></div>
+  <div class="section" id="sec-catalysts"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading catalyst calendar&hellip;</div></div></div>
+  <div class="section" id="sec-deltas"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading score deltas&hellip;</div></div></div>
 </div>
 
 <script>
@@ -188,7 +194,7 @@ $$('.nav-btn').forEach(btn=>{
     btn.classList.add('active');
     $$('.section').forEach(s=>s.classList.remove('active'));
     $(`#sec-${btn.dataset.tab}`).classList.add('active');
-    ({screener:loadScreener,'1000x':load1000x,risk:loadRisk,signals:loadSignals,ipo:loadIPO}[btn.dataset.tab]||function(){})();
+    ({screener:loadScreener,'1000x':load1000x,risk:loadRisk,signals:loadSignals,ipo:loadIPO,watchlist:loadWatchlist,catalysts:loadCatalysts,deltas:loadDeltas}[btn.dataset.tab]||function(){})();
   });
 });
 
@@ -556,6 +562,206 @@ async function loadIPO(){
     $('#sec-ipo').innerHTML=html;
     gsap.fromTo('#sec-ipo .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,ease:'power2.out'});
   }catch(e){$('#sec-ipo').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
+}
+
+// ── WATCHLIST ─────────────────────────────────────────────────────────────────
+let wlPriority='';
+async function loadWatchlist(){
+  try{
+    const url=wlPriority?`/api/v1/watchlist?priority=${wlPriority}&limit=100`:'/api/v1/watchlist?limit=100';
+    const data=await api(url);
+    const html=`
+    <div class="filter-row">
+      <span class="filter-lbl">Priority</span>
+      <button class="filter-btn ${wlPriority===''?'active':''}" onclick="wlPriority='';loadWatchlist()">All</button>
+      ${['high','medium','low'].map(p=>`<button class="filter-btn ${wlPriority===p?'active':''}" onclick="wlPriority='${p}';loadWatchlist()">${p}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+      <input id="wl-ticker" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);width:90px;padding:5px 10px;text-transform:uppercase;font-family:var(--mono);font-size:10px;letter-spacing:0.1em" placeholder="TICKER" maxlength="10">
+      <select id="wl-pri" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);font-family:var(--mono);font-size:9px;padding:5px 8px">
+        <option value="medium">Medium</option><option value="high">High</option><option value="low">Low</option>
+      </select>
+      <button class="filter-btn" onclick="addToWatchlist()" style="border-color:var(--lime);color:var(--lime)">+ Add</button>
+    </div>
+    <div class="panel panel-full">
+      ${data.length?`<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Ticker</th><th>Priority</th><th>Notes</th><th>Catalyst Date</th><th>Added</th><th></th></tr></thead>
+        <tbody>${data.map(w=>{
+          const priCol=w.priority==='high'?'var(--fail)':w.priority==='medium'?'var(--amber)':'var(--t2)';
+          return`<tr>
+            <td class="mono" style="font-weight:700;color:var(--lime);cursor:pointer" onclick="openDeepDive('${w.ticker}')">${w.ticker}</td>
+            <td><span class="badge" style="background:${priCol}18;color:${priCol};border:1px solid ${priCol}30">${w.priority}</span></td>
+            <td style="font-size:10px;color:var(--t1);max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.notes||'—'}</td>
+            <td style="font-size:10px;color:var(--t2)">${w.catalyst_date||'—'}</td>
+            <td style="font-size:10px;color:var(--t2)">${(w.added_at||'').substring(0,10)}</td>
+            <td><button onclick="removeFromWatchlist('${w.id}')" style="font-family:var(--mono);font-size:9px;background:none;border:1px solid var(--b0);color:var(--t2);padding:3px 8px;cursor:pointer;border-radius:2px" title="Remove">✕</button></td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`:'<div class="empty">Watchlist empty — add tickers above</div>'}
+    </div>`;
+    $('#sec-watchlist').innerHTML=html;
+    gsap.fromTo('#sec-watchlist .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,ease:'power2.out'});
+  }catch(e){$('#sec-watchlist').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
+}
+
+async function addToWatchlist(){
+  const ticker=$('#wl-ticker').value.trim().toUpperCase();
+  if(!ticker)return;
+  const priority=$('#wl-pri').value;
+  try{
+    await fetch(API+'/api/v1/watchlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker,priority})});
+    $('#wl-ticker').value='';
+    await loadWatchlist();
+  }catch(e){alert('Failed: '+e.message);}
+}
+
+async function removeFromWatchlist(id){
+  try{await fetch(API+'/api/v1/watchlist/'+id,{method:'DELETE'});await loadWatchlist();}catch(e){alert('Failed: '+e.message);}
+}
+
+function openDeepDive(ticker){
+  $$('.nav-btn').forEach(b=>b.classList.remove('active'));
+  const kxBtn=[...$$('.nav-btn')].find(b=>b.dataset.tab==='1000x');
+  if(kxBtn)kxBtn.classList.add('active');
+  $$('.section').forEach(s=>s.classList.remove('active'));
+  $('#sec-1000x').classList.add('active');
+  kxTicker=ticker;load1000x();
+}
+
+// ── CATALYST CALENDAR ────────────────────────────────────────────────────────
+let catRange='30d',catTicker='';
+async function loadCatalysts(){
+  try{
+    let url=`/api/v1/catalysts/calendar?range=${catRange}`;
+    if(catTicker)url+=`&ticker=${catTicker}`;
+    const data=await api(url);
+    const CTYPE_COL={earnings:'var(--lime)',fda:'var(--pass)',trial:'var(--cyan)',merger:'var(--blue)',lockup:'var(--amber)',custom:'var(--pink)'};
+
+    const html=`
+    <div class="filter-row">
+      <span class="filter-lbl">Range</span>
+      ${['7d','14d','30d','90d'].map(r=>`<button class="filter-btn ${catRange===r?'active':''}" onclick="catRange='${r}';loadCatalysts()">${r}</button>`).join('')}
+      <span class="filter-lbl" style="margin-left:12px">Ticker</span>
+      <input id="cat-ticker" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);width:80px;padding:5px 10px;text-transform:uppercase;font-family:var(--mono);font-size:10px" placeholder="ALL" maxlength="10" value="${catTicker}"
+        onkeydown="if(event.key==='Enter'){catTicker=this.value.trim().toUpperCase();loadCatalysts();}">
+      <button class="filter-btn" onclick="catTicker=$('#cat-ticker').value.trim().toUpperCase();loadCatalysts()">Filter</button>
+      ${catTicker?`<button class="filter-btn" onclick="catTicker='';loadCatalysts()" style="color:var(--fail)">Clear</button>`:''}
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
+      <input id="cat-pin-ticker" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);width:70px;padding:5px 8px;text-transform:uppercase;font-family:var(--mono);font-size:10px" placeholder="TICK" maxlength="10">
+      <select id="cat-pin-type" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);font-family:var(--mono);font-size:9px;padding:5px 8px">
+        ${['earnings','fda','trial','merger','lockup','custom'].map(t=>`<option value="${t}">${t}</option>`).join('')}
+      </select>
+      <input id="cat-pin-title" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);width:160px;padding:5px 8px;font-family:var(--mono);font-size:10px" placeholder="Event title">
+      <input id="cat-pin-date" type="date" class="filter-btn" style="border-color:var(--b1);background:var(--s1);color:var(--t0);font-family:var(--mono);font-size:9px;padding:5px 8px">
+      <button class="filter-btn" onclick="pinCatalyst()" style="border-color:var(--lime);color:var(--lime)">Pin Event</button>
+    </div>
+    <div class="panel panel-full">
+      ${data.length?`<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Date</th><th>Ticker</th><th>Type</th><th>Title</th><th>Status</th><th>Impact</th><th>Pinned</th></tr></thead>
+        <tbody>${data.map(c=>{
+          const col=CTYPE_COL[c.catalyst_type]||'var(--t2)';
+          return`<tr>
+            <td class="mono" style="font-size:11px">${c.expected_date||'—'}</td>
+            <td class="mono" style="font-weight:700;color:var(--lime);cursor:pointer" onclick="openDeepDive('${c.ticker}')">${c.ticker}</td>
+            <td><span class="badge" style="background:${col}18;color:${col};border:1px solid ${col}30">${c.catalyst_type}</span></td>
+            <td style="font-size:10px">${c.title}</td>
+            <td style="font-size:10px;color:${c.status==='confirmed'?'var(--pass)':'var(--t2)'}">${c.status}</td>
+            <td class="mono">${c.impact_score!=null?c.impact_score.toFixed(2):'—'}</td>
+            <td style="text-align:center">${c.user_pinned?'<span style="color:var(--amber)">&#9733;</span>':''}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>`:'<div class="empty">No catalyst events in this window</div>'}
+    </div>`;
+    $('#sec-catalysts').innerHTML=html;
+    gsap.fromTo('#sec-catalysts .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,ease:'power2.out'});
+  }catch(e){$('#sec-catalysts').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
+}
+
+async function pinCatalyst(){
+  const ticker=$('#cat-pin-ticker').value.trim().toUpperCase();
+  const title=$('#cat-pin-title').value.trim();
+  if(!ticker||!title)return;
+  const body={ticker,catalyst_type:$('#cat-pin-type').value,title,status:'upcoming'};
+  const dateVal=$('#cat-pin-date').value;
+  if(dateVal)body.expected_date=dateVal;
+  try{
+    await fetch(API+'/api/v1/catalysts/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    $('#cat-pin-ticker').value='';$('#cat-pin-title').value='';$('#cat-pin-date').value='';
+    await loadCatalysts();
+  }catch(e){alert('Failed: '+e.message);}
+}
+
+// ── DELTAS (Score Movers) ────────────────────────────────────────────────────
+let deltaDays=1;
+async function loadDeltas(){
+  try{
+    const data=await api(`/api/v1/1000x/deltas?days=${deltaDays}&limit=100`);
+    const movers=data.movers||[];
+    const tierChanges=data.tier_changes||[];
+    const newEntries=data.new_entries||[];
+
+    const html=`
+    <div class="filter-row">
+      <span class="filter-lbl">Compare</span>
+      ${[1,3,7,14,30].map(d=>`<button class="filter-btn ${deltaDays===d?'active':''}" onclick="deltaDays=${d};loadDeltas()">${d}d</button>`).join('')}
+      <span style="margin-left:12px;font-size:9px;color:var(--t2)">${data.date} vs ${data.compare_to}</span>
+    </div>
+    <div class="stats-row" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px">
+      ${statCard('Score Movers',movers.length,'','var(--lime)','var(--lime)')}
+      ${statCard('Tier Changes',tierChanges.length,'','var(--amber)','var(--amber)')}
+      ${statCard('New Entries',newEntries.length,'','var(--cyan)','var(--cyan)')}
+    </div>
+    <div class="panels" style="grid-template-columns:1fr 1fr;margin-bottom:16px">
+      <div class="panel">
+        <div class="sec-lbl" style="color:var(--pass)">Biggest Gainers</div>
+        ${movers.filter(m=>m.delta>0).slice(0,10).map(m=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--b0)">
+            <span class="mono" style="font-weight:700;cursor:pointer;color:var(--lime)" onclick="openDeepDive('${m.ticker}')">${m.ticker}</span>
+            <span style="font-size:10px;color:var(--t2)">${sc(m.old_score)} → ${sc(m.new_score)}</span>
+            <span class="mono" style="font-weight:700;color:var(--pass)">+${m.delta.toFixed(3)}</span>
+          </div>
+        `).join('')||'<div class="empty" style="padding:20px">No gainers</div>'}
+      </div>
+      <div class="panel">
+        <div class="sec-lbl" style="color:var(--fail)">Biggest Losers</div>
+        ${movers.filter(m=>m.delta<0).slice(0,10).map(m=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--b0)">
+            <span class="mono" style="font-weight:700;cursor:pointer;color:var(--lime)" onclick="openDeepDive('${m.ticker}')">${m.ticker}</span>
+            <span style="font-size:10px;color:var(--t2)">${sc(m.old_score)} → ${sc(m.new_score)}</span>
+            <span class="mono" style="font-weight:700;color:var(--fail)">${m.delta.toFixed(3)}</span>
+          </div>
+        `).join('')||'<div class="empty" style="padding:20px">No losers</div>'}
+      </div>
+    </div>
+    ${tierChanges.length?`
+    <div class="panel panel-full" style="margin-bottom:16px">
+      <div class="sec-lbl">Tier Changes</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Ticker</th><th>Previous</th><th></th><th>Current</th></tr></thead>
+        <tbody>${tierChanges.map(t=>`<tr>
+          <td class="mono" style="font-weight:700;color:var(--lime);cursor:pointer" onclick="openDeepDive('${t.ticker}')">${t.ticker}</td>
+          <td>${convBadge(t.old_tier)}</td>
+          <td style="text-align:center;font-size:12px;color:var(--t2)">→</td>
+          <td>${convBadge(t.new_tier)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`:''}
+    ${newEntries.length?`
+    <div class="panel panel-full">
+      <div class="sec-lbl" style="color:var(--cyan)">New Entries</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        ${newEntries.map(e=>`
+          <div style="background:var(--s2);border:1px solid var(--b0);border-radius:3px;padding:8px 14px;cursor:pointer" onclick="openDeepDive('${e.ticker}')">
+            <span class="mono" style="font-weight:700;color:var(--lime)">${e.ticker}</span>
+            <span style="font-size:10px;color:var(--t2);margin-left:6px">${sc(e.score)}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>`:''}`;
+    $('#sec-deltas').innerHTML=html;
+    gsap.fromTo('#sec-deltas .stat,#sec-deltas .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,stagger:0.04,ease:'power2.out'});
+  }catch(e){$('#sec-deltas').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
 }
 
 loadOverview();
