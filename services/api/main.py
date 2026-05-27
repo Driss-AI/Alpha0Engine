@@ -2,7 +2,7 @@
 Alpha0Engine — FastAPI Gateway v0.5.0
 Serves API endpoints + web dashboard at root.
 """
-import sys, os
+import sys, os, logging
 sys.path.insert(0, os.path.dirname(__file__))
 
 from contextlib import asynccontextmanager
@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 load_dotenv()
+
+logger = logging.getLogger("alpha0-api")
 
 from shared.clients.postgres import create_db_and_tables
 from routers import (
@@ -35,7 +37,10 @@ from routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_db_and_tables()
+    try:
+        await create_db_and_tables()
+    except Exception as e:
+        logger.error(f"DB init failed (API will start degraded): {e}")
     yield
 
 
