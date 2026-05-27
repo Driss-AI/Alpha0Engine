@@ -12,11 +12,16 @@ from sqlalchemy.orm import sessionmaker
 
 
 def _async_url(url: str) -> str:
-    return (
+    url = (
         url
         .replace("postgresql://", "postgresql+asyncpg://")
         .replace("postgres://", "postgresql+asyncpg://")
     )
+    # Ensure SSL mode is set for Railway's SSL-enabled Postgres
+    if "sslmode=" not in url and "ssl=" not in url:
+        sep = "&" if "?" in url else "?"
+        url += f"{sep}ssl=require"
+    return url
 
 
 DATABASE_URL = os.environ["DATABASE_URL"]
