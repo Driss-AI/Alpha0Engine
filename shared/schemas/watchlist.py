@@ -29,8 +29,8 @@ class UserWatchlist(UserWatchlistBase, table=True):
     __tablename__ = "user_watchlist"
 
     id: str = Field(default_factory=_new_id, primary_key=True)
-    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    added_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class UserWatchlistCreate(UserWatchlistBase):

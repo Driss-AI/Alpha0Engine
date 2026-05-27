@@ -163,7 +163,7 @@ async def score_entity(
         smart_money_score=lens5["smart_money_score"],
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Check for existing record
     existing = (await session.exec(

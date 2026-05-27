@@ -30,7 +30,7 @@ async def add_watchlist_item(
     found = existing.first()
     if found:
         found.hearted = True
-        found.updated_at = datetime.now(timezone.utc)
+        found.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         if item_in.notes is not None:
             found.notes = item_in.notes
         found.priority = item_in.priority
@@ -87,7 +87,7 @@ async def update_watchlist_item(
 
     for key, value in data.items():
         setattr(item, key, value)
-    item.updated_at = datetime.now(timezone.utc)
+    item.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
 
     session.add(item)
     await session.commit()
