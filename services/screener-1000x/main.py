@@ -9,7 +9,7 @@ import os
 import sys
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -31,6 +31,7 @@ from lens_demand_rider import score_demand_rider
 from lens_float_mechanics import score_float_mechanics
 from lens_smart_money import score_smart_money
 from composite_engine import compute_1000x_score
+from shared.services.snapshots import write_daily_snapshots
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -162,7 +163,7 @@ async def score_entity(
         smart_money_score=lens5["smart_money_score"],
     )
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
 
     # Check for existing record
     existing = (await session.exec(
@@ -291,6 +292,10 @@ async def run_screening_batch():
             )
             # Respect SEC rate limits between batches
             await asyncio.sleep(1.0)
+
+    async with AsyncSessionLocal() as snap_session:
+        snap_count = await write_daily_snapshots(snap_session)
+        logger.info(f"Daily score snapshots written: {snap_count}")
 
     logger.info("=" * 60)
     logger.info(f"1000x SCREENING COMPLETE — {scored} scored, {errors} errors")
