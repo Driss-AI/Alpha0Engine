@@ -287,11 +287,14 @@ def score_smart_money(
     composite = 0.50 * inst_score + 0.50 * insider_score + convergence_bonus
     composite = round(min(max(composite, 0.0), 1.0), 4)
 
+    cited_ids = [s.get("signal_id") for s in signals if s.get("signal_id")]
+
     return {
         "smart_money_score": composite,
         "institutional_buys_13f": inst_result["buy_count"],
         "insider_buys_form4": insider_result["buy_count"],
         "insider_buy_value_usd": insider_result["buy_value"],
+        "cited_signal_ids": cited_ids,
         "smart_money_details": {
             "components": {
                 "institutional": inst_score,
@@ -300,5 +303,6 @@ def score_smart_money(
             },
             "institutional": inst_result,
             "insider": insider_result,
+            "cited_signal_ids": cited_ids,
         },
     }

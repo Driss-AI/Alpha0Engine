@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>1000x Screener — Alpha0Engine</title>
+<title>Asymmetric Screener — Alpha0Engine</title>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,700;1,300&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <style>
@@ -144,7 +144,7 @@ html,body { background:var(--bg); color:var(--t0); font-family:var(--mono); min-
 
 <header class="hdr">
   <div class="logo">ALPHA<em>0</em>ENGINE</div>
-  <div class="hdr-mid">1000x Screener &mdash; Module 05</div>
+  <div class="hdr-mid">Asymmetric Screener &mdash; Module 05</div>
   <div class="hdr-right">
     <div class="clock"><span id="clock">00:00:00</span><span class="blink"></span></div>
     <div class="clock-lbl">UTC Live</div>
@@ -241,7 +241,7 @@ function verdict(passes, score) {
   if (passes >= 5)                    return { text:'All 5 lenses pass — exceptional setup',          label:'PERFECT SETUP',        cls:'strong' };
   if (passes >= 4 && score >= 70)     return { text:'4 of 5 lenses pass — strong asymmetric setup',  label:'STRONG BUY CANDIDATE', cls:'strong' };
   if (passes >= 3 && score >= 55)     return { text:'3 lenses pass — moderate setup, monitor closely',label:'WATCHLIST',            cls:'moderate' };
-  return                                     { text:'Fails majority of lenses — not a 1000x candidate',label:'DOES NOT QUALIFY',   cls:'weak' };
+  return                                     { text:'Fails majority of lenses — not an asymmetric candidate',label:'DOES NOT QUALIFY',   cls:'weak' };
 }
 
 /* ── Lens description builder ───────────────────────────── */

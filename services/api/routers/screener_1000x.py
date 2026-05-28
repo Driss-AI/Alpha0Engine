@@ -11,7 +11,7 @@ from shared.schemas.equity_screen import EquityScreen, EquityScreenRead
 from shared.schemas.entities import Entity
 from shared.clients.postgres import get_session
 
-router = APIRouter(tags=["1000x Screener"])
+router = APIRouter(tags=["Asymmetric Screener"])
 
 
 @router.get("/1000x", response_model=List[EquityScreenRead])
@@ -23,7 +23,7 @@ async def list_1000x_screens(
     limit: int = Query(50, le=200),
     session: AsyncSession = Depends(get_session),
 ):
-    """List all 1000x screened stocks, sorted by composite score."""
+    """List all screened stocks by asymmetric opportunity score."""
     query = select(EquityScreen).where(EquityScreen.composite_score >= min_score)
     if tier:
         query = query.where(EquityScreen.conviction_tier == tier.upper())
@@ -76,7 +76,7 @@ async def get_watchlist(
 
 @router.get("/1000x/summary")
 async def screener_summary(session: AsyncSession = Depends(get_session)):
-    """Summary stats for the 1000x screener dashboard card."""
+    """Summary stats for the asymmetric screener dashboard card."""
     all_screens = (await session.exec(select(EquityScreen).limit(5000))).all()
     total = len(all_screens)
 
@@ -161,7 +161,7 @@ async def get_ticker_deep_dive(
         screen = result.first()
 
     if not screen:
-        raise HTTPException(status_code=404, detail=f"No 1000x screen found for {ticker}")
+        raise HTTPException(status_code=404, detail=f"No screen found for {ticker}")
 
     return {
         "ticker": screen.ticker,

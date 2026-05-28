@@ -160,7 +160,7 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
 <nav class="nav">
   <button class="nav-btn active" data-tab="overview">Overview</button>
   <button class="nav-btn" data-tab="screener">Screener</button>
-  <button class="nav-btn hot" data-tab="1000x">1000x Screener</button>
+  <button class="nav-btn hot" data-tab="1000x">Asymmetric Screener</button>
   <button class="nav-btn" data-tab="risk">Risk Radar</button>
   <button class="nav-btn" data-tab="signals">Signals</button>
   <button class="nav-btn" data-tab="ipo">IPO Tracker</button>
@@ -174,7 +174,7 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
 <div class="main">
   <div class="section active" id="sec-overview"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Connecting to engine&hellip;</div></div></div>
   <div class="section" id="sec-screener"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading screener&hellip;</div></div></div>
-  <div class="section" id="sec-1000x"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading 1000x data&hellip;</div></div></div>
+  <div class="section" id="sec-1000x"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading asymmetric screener&hellip;</div></div></div>
   <div class="section" id="sec-risk"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading risk radar&hellip;</div></div></div>
   <div class="section" id="sec-signals"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading signals&hellip;</div></div></div>
   <div class="section" id="sec-ipo"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading IPO candidates&hellip;</div></div></div>
@@ -246,7 +246,7 @@ async function loadOverview(){
       ${statCard('Companies',num(s.companies_tracked),`${s.private||0} private · ${s.public||0} public`,'var(--t0)','var(--b2)')}
       ${statCard('Signals',num(s.total_signals),`${num(s.signals_this_week)} this week`,'var(--lime)','var(--lime)')}
       ${statCard('Screened',num(sc2.total_screened),`avg ${sc(sc2.avg_fundamental_score)}`,'var(--pass)','var(--pass)')}
-      ${statCard('1000x Watchlist',num(kx.watchlist_count),`${num(kx.total_screened)} screened`,'var(--amber)','var(--amber)')}
+      ${statCard('Asymmetric Watchlist',num(kx.watchlist_count),`${num(kx.total_screened)} screened`,'var(--amber)','var(--amber)')}
       ${statCard('Risk Alerts',num((rs.hype_flagged||0)+(rs.illiquidity_flagged||0)),`${rs.hype_flagged||0} hype · ${rs.illiquidity_flagged||0} illiquid`,'var(--fail)','var(--fail)')}
     </div>
 
@@ -258,7 +258,7 @@ async function loadOverview(){
         </div>
       </div>
       <div class="panel">
-        <div class="sec-lbl">1000x Conviction Tiers</div>
+        <div class="sec-lbl">Conviction Tiers</div>
         <div class="tier-row">
           ${['CONVICTION','HIGH','WATCH','SPECULATIVE','PASS'].map(t=>`<div class="tier-item"><div class="tier-num" style="font-size:20px">${kxT[t]||0}</div>${convBadge(t)}</div>`).join('')}
         </div>
@@ -273,7 +273,7 @@ async function loadOverview(){
 
     ${kx.top_picks&&kx.top_picks.length?`
     <div class="panel panel-full" style="margin-bottom:20px">
-      <div class="sec-lbl" style="color:var(--lime)">★ 1000x Top Picks</div>
+      <div class="sec-lbl" style="color:var(--lime)">★ Top Asymmetric Picks</div>
       <div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Ticker</th><th>Company</th><th>Tier</th><th>Score</th><th>Lenses</th><th>Top Lens</th><th>Notes</th></tr></thead>
         <tbody>${kx.top_picks.map(p=>`<tr>

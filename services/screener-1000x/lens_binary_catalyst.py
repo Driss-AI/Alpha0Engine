@@ -169,6 +169,7 @@ def detect_catalysts_from_signals(signals: List[Dict[str, Any]]) -> List[Dict[st
             "weight": cat_weight,
             "days_until": days_until,
             "source_signal": sig.get("signal_type"),
+            "signal_id": sig.get("signal_id"),
             "notes": sig.get("notes"),
         })
 
@@ -257,10 +258,13 @@ def score_binary_catalyst(
     )
     composite = round(min(max(composite, 0.0), 1.0), 4)
 
+    cited_ids = [c["signal_id"] for c in catalysts if c.get("signal_id")]
+
     return {
         "catalyst_score": composite,
         "catalyst_type": best_type,
         "catalyst_proximity_days": best_days,
+        "cited_signal_ids": cited_ids,
         "catalyst_details": {
             "components": {
                 "catalyst_weight": catalyst_w,
@@ -269,6 +273,7 @@ def score_binary_catalyst(
                 "cash_runway": runway_s,
             },
             "all_catalysts": catalysts,
+            "cited_signal_ids": cited_ids,
             "market_cap": market_cap,
             "cash_runway_months": cash_runway_months,
         },

@@ -33,11 +33,10 @@ from lens_smart_money import score_smart_money
 from composite_engine import compute_1000x_score
 from shared.services.snapshots import write_daily_snapshots
 
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO"),
-    format="%(asctime)s | %(name)s | %(message)s",
-)
-logger = logging.getLogger("screener-1000x")
+from shared.logging import setup_logging, get_logger, Timer
+
+setup_logging("screener-1000x")
+logger = get_logger("screener-1000x")
 
 BATCH_SIZE = 25
 SEC_RATE_LIMIT_DELAY = 0.2  # SEC allows 10 req/sec
@@ -50,6 +49,7 @@ async def get_entity_signals(session: AsyncSession, entity_id: str) -> list:
     )
     return [
         {
+            "signal_id": s.id,
             "signal_type": s.signal_type,
             "signal_date": s.signal_date.isoformat() if s.signal_date else None,
             "value": s.value,
@@ -220,6 +220,12 @@ async def score_entity(
         "raw_data": {
             "composite_details": composite,
             "fundamentals_used": fundamentals,
+            "citation_chain": {
+                "binary_catalyst": lens1.get("cited_signal_ids", []),
+                "demand_rider": lens3.get("cited_signal_ids", []),
+                "float_mechanics": lens4.get("cited_signal_ids", []),
+                "smart_money": lens5.get("cited_signal_ids", []),
+            },
         },
     }
 

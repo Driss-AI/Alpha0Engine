@@ -270,6 +270,8 @@ async def score_float_mechanics(
     composite = 0.40 * float_s + 0.35 * short_s + 0.25 * squeeze
     composite = round(min(max(composite, 0.0), 1.0), 4)
 
+    cited_ids = [s.get("signal_id") for s in signals if s.get("signal_id")]
+
     return {
         "float_score": composite,
         "float_category": category,
@@ -278,6 +280,7 @@ async def score_float_mechanics(
         "float_shares": float_shares,
         "short_interest": short_interest,
         "short_pct_float": short_pct,
+        "cited_signal_ids": cited_ids,
         "float_details": {
             "components": {
                 "float_tightness": float_s,
@@ -288,5 +291,6 @@ async def score_float_mechanics(
             "shares_outstanding": shares_outstanding,
             "float_shares": float_shares,
             "float_category": category,
+            "cited_signal_ids": cited_ids,
         },
     }

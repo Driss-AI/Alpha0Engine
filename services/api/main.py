@@ -2,21 +2,23 @@
 Alpha0Engine — FastAPI Gateway v0.6.0
 Serves API endpoints + web dashboard at root.
 """
-import sys, os, logging
+import sys, os, logging, time
 sys.path.insert(0, os.path.dirname(__file__))
 
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 load_dotenv()
 
 from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, IS_PROD, LOG_LEVEL, API_SECRET_KEY
+from shared.logging import setup_logging, get_logger
 
-logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
-logger = logging.getLogger("alpha0-api")
+setup_logging("alpha0-api", level=LOG_LEVEL)
+logger = get_logger("alpha0-api")
 
 from shared.clients.postgres import create_db_and_tables
 from middleware.auth import require_api_key, require_admin_key
@@ -38,6 +40,7 @@ from routers import (
     deltas,
     catalysts,
     brain,
+    metrics,
 )
 
 
@@ -71,6 +74,28 @@ app.add_middleware(
 
 setup_rate_limiting(app)
 
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        if request.url.path in ("/health", "/health/", "/favicon.ico", "/api/v1/metrics"):
+            return await call_next(request)
+        start = time.perf_counter()
+        response = await call_next(request)
+        duration_ms = round((time.perf_counter() - start) * 1000, 1)
+        logger.info(
+            f"{request.method} {request.url.path} → {response.status_code}",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration_ms": duration_ms,
+            },
+        )
+        return response
+
+
+app.add_middleware(RequestLoggingMiddleware)
+
 DASHBOARD_HTML = Path(__file__).parent / "static" / "dashboard.html"
 SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
 
@@ -99,8 +124,9 @@ async def screener():
     return HTMLResponse("<h1>1000x Screener</h1><p>UI not found.</p>")
 
 
-# ── Health (no auth) ──
+# ── Health + Metrics (no auth) ──
 app.include_router(health.router)
+app.include_router(metrics.router, prefix="/api/v1")
 
 # ── Read-only API routes (viewer key) ──
 _viewer = [Depends(require_api_key)]

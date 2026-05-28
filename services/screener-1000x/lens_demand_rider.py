@@ -222,11 +222,14 @@ def score_demand_rider(
     )
     composite = round(min(max(composite, 0.0), 1.0), 4)
 
+    cited_ids = [s.get("signal_id") for s in signals if s.get("signal_id")]
+
     return {
         "demand_score": composite,
         "megatrend_alignment": MEGATRENDS.get(best_trend, {}).get("label", best_trend),
         "theme_strength": theme_strength,
         "institutional_neglect": neglect,
+        "cited_signal_ids": cited_ids,
         "demand_details": {
             "components": {
                 "theme_strength": theme_strength,
@@ -236,5 +239,6 @@ def score_demand_rider(
             },
             "all_trends": trend_scores,
             "best_trend_id": best_trend,
+            "cited_signal_ids": cited_ids,
         },
     }
