@@ -32,6 +32,7 @@ from routers import (
     deep_dive,
     deltas,
     catalysts,
+    brain,
 )
 
 
@@ -92,3 +93,4 @@ app.include_router(prices.router, prefix="/api/v1")
 app.include_router(pipeline_health.router, prefix="/api/v1")
 app.include_router(watchlist.router, prefix="/api/v1")
 app.include_router(catalysts.router, prefix="/api/v1")
+app.include_router(brain.router, prefix="/api/v1")
