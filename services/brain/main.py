@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from brain_core import run_brain
+from feedback import run_feedback
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -33,6 +34,13 @@ async def run_once():
     logger.info(
         f"Brain run complete: {stats['threshold_passed']} opportunities published, "
         f"{stats['analyzed']} analyzed, {len(stats['errors'])} errors"
+    )
+
+    logger.info("Running feedback loop on past picks...")
+    fb_stats = await run_feedback()
+    logger.info(
+        f"Feedback complete: {fb_stats['newly_hit']} hit, "
+        f"{fb_stats['newly_missed']} miss, {fb_stats['unchanged']} unchanged"
     )
     return stats
 

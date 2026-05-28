@@ -767,7 +767,7 @@ async function loadDeltas(){
 }
 
 // ── BRAIN (AI Picks) ─────────────────────────────────────────────────────────
-let brainDays=30,brainConv='',brainPick=null;
+let brainDays=30,brainConv='',brainStatus='active',brainPick=null;
 function brainConvBadge(c){
   const m={HIGH:'tier-conviction',MEDIUM:'tier-high',LOW:'tier-watch',NONE:'tier-pass'};
   return`<span class="badge ${m[c]||'tier-pass'}">${c||'—'}</span>`;
@@ -782,11 +782,22 @@ function confBar(v){
   return`<div style="display:flex;align-items:center;gap:6px"><div style="width:50px;height:3px;background:var(--b0);border-radius:2px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${col};border-radius:2px"></div></div><span class="mono" style="font-size:10px;color:${col}">${pct}%</span></div>`;
 }
 
+function retBadge(v){
+  if(v==null) return'<span class="mono" style="color:var(--t2)">—</span>';
+  const col=v>=100?'var(--lime)':v>0?'var(--pass)':v>-20?'var(--amber)':'var(--fail)';
+  return`<span class="mono" style="font-weight:700;color:${col}">${v>0?'+':''}${v.toFixed(1)}%</span>`;
+}
+function statusBadge(s){
+  const m={active:['var(--cyan)','var(--cyan)'],hit:['var(--pass)','var(--pass)'],miss:['var(--fail)','var(--fail)'],expired:['var(--t2)','var(--b1)']};
+  const[c,bg]=m[s]||['var(--t2)','var(--b1)'];
+  return`<span style="font-size:9px;font-weight:700;color:${c};border:1px solid ${bg};padding:2px 6px;border-radius:2px;letter-spacing:0.1em">${(s||'—').toUpperCase()}</span>`;
+}
 async function loadBrain(){
   try{
-    const [picks,stats]=await Promise.all([
-      api(`/api/v1/brain/picks?days=${brainDays}${brainConv?'&conviction='+brainConv:''}&limit=50`),
+    const [picks,stats,fb]=await Promise.all([
+      api(`/api/v1/brain/picks?days=${brainDays}${brainConv?'&conviction='+brainConv:''}&status=${brainStatus}&limit=50`),
       api('/api/v1/brain/stats?days='+brainDays),
+      api('/api/v1/brain/feedback/stats?days=90'),
     ]);
 
     let deepDive='';
@@ -865,20 +876,68 @@ async function loadBrain(){
 
     const st=stats||{};
     const byConv=st.by_conviction||{};
+    const f=fb||{};
+    const hitRate=f.total_resolved?f.hit_rate:null;
 
     const html=`
     ${deepDive}
 
-    <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+    <div class="stats-row" style="grid-template-columns:repeat(6,1fr);margin-bottom:16px">
       ${statCard('Brain Picks',st.total_opportunities||0,brainDays+'d window','var(--cyan)','var(--cyan)')}
       ${statCard('HIGH Conviction',(byConv.HIGH||0),'','var(--pass)','var(--pass)')}
-      ${statCard('MEDIUM',(byConv.MEDIUM||0),'','var(--blue)','var(--blue)')}
+      ${statCard('Hit Rate',hitRate!=null?hitRate.toFixed(0)+'%':'—',f.total_resolved?f.hits+'/'+f.total_resolved+' resolved':'no data yet','var(--lime)','var(--lime)')}
+      ${statCard('Avg Return',f.avg_return?f.avg_return.toFixed(1)+'%':'—','resolved picks','var(--pass)','var(--pass)')}
+      ${statCard('Active',f.active_picks||0,f.active_avg_return?f.active_avg_return.toFixed(1)+'% avg':'tracking','var(--blue)','var(--blue)')}
       ${statCard('Avg Confidence',(st.avg_confidence_score?Math.round(st.avg_confidence_score*100)+'%':'—'),'','var(--amber)','var(--amber)')}
     </div>
+
+    ${f.total_resolved?`
+    <div class="panels" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:16px">
+      <div class="panel" style="border-left:2px solid var(--pass)">
+        <div class="sec-lbl" style="color:var(--pass)">Hits</div>
+        <div style="font-size:24px;font-weight:700;color:var(--pass)">${f.hits||0}</div>
+        <div style="font-size:10px;color:var(--t2);margin-top:4px">Avg return: ${f.avg_hit_return?f.avg_hit_return.toFixed(1)+'%':'—'}</div>
+        ${f.best_pick?`<div style="font-size:9px;color:var(--t2);margin-top:6px">Best: <span class="mono" style="color:var(--lime)">${f.best_pick.ticker}</span> ${retBadge(f.best_pick.return_pct)}</div>`:''}
+      </div>
+      <div class="panel" style="border-left:2px solid var(--fail)">
+        <div class="sec-lbl" style="color:var(--fail)">Misses</div>
+        <div style="font-size:24px;font-weight:700;color:var(--fail)">${f.misses||0}</div>
+        <div style="font-size:10px;color:var(--t2);margin-top:4px">Avg return: ${f.avg_miss_return?f.avg_miss_return.toFixed(1)+'%':'—'}</div>
+        ${f.worst_pick?`<div style="font-size:9px;color:var(--t2);margin-top:6px">Worst: <span class="mono" style="color:var(--fail)">${f.worst_pick.ticker}</span> ${retBadge(f.worst_pick.return_pct)}</div>`:''}
+      </div>
+      <div class="panel" style="border-left:2px solid var(--amber)">
+        <div class="sec-lbl">By Conviction</div>
+        ${Object.entries(f.by_conviction||{}).filter(([,v])=>v.total>0).map(([k,v])=>`
+          <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--b0)">
+            <span style="font-size:10px;font-weight:700">${k}</span>
+            <span style="font-size:10px;color:var(--t2)">${v.hits}/${v.total} hits (${v.hit_rate.toFixed(0)}%)</span>
+            <span class="mono" style="font-size:10px;color:${v.avg_return>=0?'var(--pass)':'var(--fail)'}">${v.avg_return>=0?'+':''}${v.avg_return.toFixed(1)}%</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    ${f.recent_resolutions&&f.recent_resolutions.length?`
+    <div class="panel panel-full" style="margin-bottom:16px">
+      <div class="sec-lbl">Recent Resolutions</div>
+      <div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Ticker</th><th>Status</th><th>Return</th><th>Conviction</th><th>Notes</th><th>Resolved</th></tr></thead>
+        <tbody>${f.recent_resolutions.map(r=>`<tr>
+          <td class="mono" style="font-weight:700;color:var(--cyan)">${r.ticker||'—'}</td>
+          <td>${statusBadge(r.status)}</td>
+          <td>${retBadge(r.return_pct)}</td>
+          <td>${brainConvBadge(r.conviction)}</td>
+          <td style="font-size:9px;color:var(--t2);max-width:300px;overflow:hidden;text-overflow:ellipsis">${r.feedback_notes||'—'}</td>
+          <td style="font-size:10px;color:var(--t2)">${(r.resolved_at||'').substring(0,10)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>`:''}
+    `:''}
 
     <div class="filter-row">
       <span class="filter-lbl">Window</span>
       ${[7,14,30,90].map(d=>`<button class="filter-btn ${brainDays===d?'active':''}" onclick="brainDays=${d};loadBrain()">${d}d</button>`).join('')}
+      <span class="filter-lbl" style="margin-left:12px">Status</span>
+      ${['active','hit','miss','all'].map(s=>`<button class="filter-btn ${brainStatus===s?'active':''}" onclick="brainStatus='${s}';loadBrain()">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
       <span class="filter-lbl" style="margin-left:12px">Conviction</span>
       <button class="filter-btn ${brainConv===''?'active':''}" onclick="brainConv='';loadBrain()">All</button>
       ${['HIGH','MEDIUM','LOW'].map(c=>`<button class="filter-btn ${brainConv===c?'active':''}" onclick="brainConv='${c}';loadBrain()">${c}</button>`).join('')}
@@ -886,18 +945,18 @@ async function loadBrain(){
 
     <div class="panel panel-full">
       ${picks.length?`<div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Ticker</th><th>Company</th><th>Conviction</th><th>Confidence</th><th>Type</th><th>Signals</th><th>Lenses</th><th>Sources</th><th>Return</th><th>Horizon</th><th>Generated</th></tr></thead>
+        <thead><tr><th>Ticker</th><th>Company</th><th>Status</th><th>Conviction</th><th>Confidence</th><th>Pick $</th><th>Now $</th><th>Return</th><th>Signals</th><th>Target</th><th>Generated</th></tr></thead>
         <tbody>${picks.map(p=>`<tr style="cursor:pointer" onclick='brainPick=${JSON.stringify(p).replace(/'/g,"&#39;")};loadBrain()'>
           <td class="mono" style="font-weight:700;color:var(--cyan)">${p.ticker||'—'}</td>
           <td class="name">${p.company_name||'—'}</td>
+          <td>${statusBadge(p.status)}</td>
           <td>${brainConvBadge(p.conviction)}</td>
           <td>${confBar(p.confidence_score)}</td>
-          <td style="font-size:10px">${p.thesis_type||'—'}</td>
+          <td class="mono" style="font-size:10px">${p.price_at_pick?'$'+p.price_at_pick.toFixed(2):'—'}</td>
+          <td class="mono" style="font-size:10px">${p.price_latest?'$'+p.price_latest.toFixed(2):'—'}</td>
+          <td>${retBadge(p.return_pct)}</td>
           <td class="mono">${p.signal_count||0}</td>
-          <td class="mono">${p.lenses_active}/5</td>
-          <td class="mono">${p.source_diversity||0}</td>
           <td class="mono" style="font-weight:700;color:${p.return_multiple>=10?'var(--lime)':p.return_multiple>=5?'var(--pass)':'var(--t1)'}">${p.return_multiple?p.return_multiple+'x':'—'}</td>
-          <td style="font-size:10px">${p.time_horizon||'—'}</td>
           <td style="font-size:10px;color:var(--t2)">${(p.generated_at||'').substring(0,10)}</td>
         </tr>`).join('')}</tbody>
       </table></div>`:`

@@ -71,6 +71,13 @@ class BrainOpportunityBase(SQLModel):
     expires_at: Optional[datetime] = Field(default=None)
     screening_notes: Optional[str] = Field(default=None)
 
+    # ── Feedback / Performance Tracking ─────────────────────
+    price_at_pick: Optional[float] = Field(default=None)
+    price_latest: Optional[float] = Field(default=None)
+    return_pct: Optional[float] = Field(default=None)
+    resolved_at: Optional[datetime] = Field(default=None)
+    feedback_notes: Optional[str] = Field(default=None)
+
 
 class BrainOpportunity(BrainOpportunityBase, table=True):
     __tablename__ = "brain_opportunities"

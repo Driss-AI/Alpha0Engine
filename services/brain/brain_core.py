@@ -30,6 +30,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.brain_opportunity import BrainOpportunity
 from shared.schemas.brain_narrative import BrainNarrative
+from shared.schemas.daily_prices import DailyPrice
 
 from candidate_scanner import scan_candidates
 from evidence_collector import collect_evidence_batch
@@ -56,6 +57,16 @@ def _map_time_horizon_to_expiry(horizon: Optional[str]) -> Optional[datetime]:
     return now + timedelta(days=60)
 
 
+async def _get_latest_price(session: AsyncSession, ticker: str) -> Optional[float]:
+    result = await session.exec(
+        select(DailyPrice.close)
+        .where(DailyPrice.ticker == ticker, DailyPrice.close.isnot(None))
+        .order_by(DailyPrice.trade_date.desc())
+        .limit(1)
+    )
+    return result.first()
+
+
 async def _persist_opportunity(
     session: AsyncSession,
     candidate: Dict[str, Any],
@@ -66,6 +77,8 @@ async def _persist_opportunity(
     entity = evidence.get("entity", {})
     screener = evidence.get("screener", {}) or {}
     verification = analysis.get("_verification", {})
+
+    pick_price = await _get_latest_price(session, candidate.get("ticker", ""))
 
     opp = BrainOpportunity(
         entity_id=candidate["entity_id"],
@@ -90,6 +103,9 @@ async def _persist_opportunity(
         evidence_sources=verification.get("source_types_cited", []),
         status="active",
         expires_at=_map_time_horizon_to_expiry(analysis.get("time_horizon")),
+        price_at_pick=pick_price,
+        price_latest=pick_price,
+        return_pct=0.0,
         screening_notes=(
             f"Paths: {candidate.get('path_count', 1)} | "
             f"Priority: {candidate.get('priority', 0):.3f} | "
