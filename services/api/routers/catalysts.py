@@ -6,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.clients.postgres import get_session
+from middleware.auth import require_admin_key
 from shared.schemas.catalyst_event import (
     CatalystEvent,
     CatalystEventCreate,
@@ -83,6 +84,7 @@ async def list_catalysts(
 async def pin_catalyst(
     event_in: CatalystEventCreate,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     if event_in.catalyst_type not in CATALYST_TYPES:
         raise HTTPException(400, f"catalyst_type must be one of {CATALYST_TYPES}")
@@ -104,6 +106,7 @@ async def update_catalyst(
     event_id: str,
     event_update: CatalystEventUpdate,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     event = await session.get(CatalystEvent, event_id)
     if not event:

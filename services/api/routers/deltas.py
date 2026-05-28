@@ -6,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.clients.postgres import get_session
+from middleware.auth import require_admin_key
 from shared.schemas.score_snapshot import ScoreSnapshot
 from shared.services.snapshots import write_daily_snapshots
 
@@ -15,6 +16,7 @@ router = APIRouter(tags=["Deltas"])
 @router.post("/1000x/snapshots/write")
 async def write_daily_snapshots_endpoint(
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ) -> Dict[str, Any]:
     count = await write_daily_snapshots(session)
     return {"status": "ok", "snapshots_written": count}

@@ -6,6 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.schemas.signals import Signal, SignalCreate, SignalRead, SIGNAL_TYPES
 from shared.clients.postgres import get_session
+from middleware.auth import require_admin_key
 
 router = APIRouter(tags=["Signals"])
 
@@ -39,7 +40,7 @@ async def list_signals(
 
 
 @router.post("/signals", response_model=SignalRead, status_code=201)
-async def create_signal(signal_in: SignalCreate, session: AsyncSession = Depends(get_session)):
+async def create_signal(signal_in: SignalCreate, session: AsyncSession = Depends(get_session), _key: str = Depends(require_admin_key)):
     signal = Signal.from_orm(signal_in)
     session.add(signal)
     await session.commit()

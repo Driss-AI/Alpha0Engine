@@ -6,6 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.schemas.entities import Entity, EntityCreate, EntityRead, EntityUpdate
 from shared.clients.postgres import get_session
+from middleware.auth import require_admin_key
 
 router = APIRouter(tags=["Entities"])
 
@@ -39,7 +40,7 @@ async def get_entity(entity_id: str, session: AsyncSession = Depends(get_session
 
 
 @router.post("/entities", response_model=EntityRead, status_code=201)
-async def create_entity(entity_in: EntityCreate, session: AsyncSession = Depends(get_session)):
+async def create_entity(entity_in: EntityCreate, session: AsyncSession = Depends(get_session), _key: str = Depends(require_admin_key)):
     entity = Entity.from_orm(entity_in)
     session.add(entity)
     await session.commit()
@@ -52,6 +53,7 @@ async def update_entity(
     entity_id: str,
     updates: EntityUpdate,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     entity = await session.get(Entity, entity_id)
     if not entity:

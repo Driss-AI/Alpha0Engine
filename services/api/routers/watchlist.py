@@ -6,6 +6,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.clients.postgres import get_session
+from middleware.auth import require_admin_key
 from shared.schemas.watchlist import (
     UserWatchlist,
     UserWatchlistCreate,
@@ -21,6 +22,7 @@ router = APIRouter(tags=["Watchlist"])
 async def add_watchlist_item(
     item_in: UserWatchlistCreate,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     ticker = item_in.ticker.upper().strip()
     if item_in.priority not in WATCHLIST_PRIORITIES:
@@ -76,6 +78,7 @@ async def update_watchlist_item(
     item_id: str,
     item_update: UserWatchlistUpdate,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     item = await session.get(UserWatchlist, item_id)
     if not item:
@@ -99,6 +102,7 @@ async def update_watchlist_item(
 async def delete_watchlist_item(
     item_id: str,
     session: AsyncSession = Depends(get_session),
+    _key: str = Depends(require_admin_key),
 ):
     item = await session.get(UserWatchlist, item_id)
     if not item:
