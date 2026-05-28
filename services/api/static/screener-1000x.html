@@ -154,7 +154,7 @@ html,body { background:var(--bg); color:var(--t0); font-family:var(--mono); min-
 <div class="search-bar">
   <div class="search-wrap">
     <span class="search-label">Ticker</span>
-    <input class="search-input" id="search" type="text" placeholder="AAPL" maxlength="10"
+    <input class="search-input" id="search" type="text" placeholder="Enter ticker..." maxlength="10"
       onkeydown="if(event.key==='Enter')doSearch()">
     <button class="search-btn" onclick="doSearch()">Scan ↵</button>
   </div>
@@ -448,9 +448,10 @@ async function loadTicker(ticker) {
 
 /* ── Search ─────────────────────────────────────────────── */
 function doSearch() {
-  const val = document.getElementById('search').value.trim().toUpperCase();
+  const el = document.getElementById('search');
+  const val = el.value.trim().toUpperCase();
   if (!val) return;
-  document.getElementById('search').value = '';
+  el.value = val; // keep ticker visible in search bar
   currentTicker = null; // force reload even if same
   loadTicker(val);
 }

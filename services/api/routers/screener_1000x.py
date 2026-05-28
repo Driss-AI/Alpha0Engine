@@ -127,13 +127,33 @@ async def get_ticker_deep_dive(
     session: AsyncSession = Depends(get_session),
 ):
     """Deep dive for a specific ticker — full lens breakdown."""
-    # Try by ticker first
-    result = await session.exec(
-        select(EquityScreen).where(EquityScreen.ticker == ticker.upper())
-    )
-    screen = result.first()
+    upper = ticker.upper()
 
-    # Fallback: try by entity_id or company_name
+    # Strategy 1: Find entity by ticker, then get its equity screen
+    entity_result = await session.exec(
+        select(Entity).where(Entity.ticker == upper)
+    )
+    entity = entity_result.first()
+    screen = None
+
+    if entity:
+        result = await session.exec(
+            select(EquityScreen).where(EquityScreen.entity_id == entity.id)
+        )
+        screen = result.first()
+        # Ensure the screen has the correct ticker/name from the entity
+        if screen:
+            screen.ticker = entity.ticker
+            screen.company_name = entity.name
+
+    # Strategy 2: Direct ticker match in equity_screens
+    if not screen:
+        result = await session.exec(
+            select(EquityScreen).where(EquityScreen.ticker == upper)
+        )
+        screen = result.first()
+
+    # Strategy 3: Try by entity_id
     if not screen:
         result = await session.exec(
             select(EquityScreen).where(EquityScreen.entity_id == ticker)
