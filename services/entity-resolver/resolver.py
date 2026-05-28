@@ -99,10 +99,15 @@ class EntityResolver:
             from shared.schemas.signals import Signal
             from sqlmodel import update
             async with AsyncSessionLocal() as s:
-                await s.exec(update(Signal).where(Signal.source_id == source_id).where(Signal.entity_id == "UNRESOLVED").values(entity_id=entity_id))
+                await s.exec(
+                    update(Signal)
+                    .where(Signal.source_id == source_id)
+                    .where(Signal.resolution_status == "pending")
+                    .values(entity_id=entity_id, resolution_status="resolved")
+                )
                 await s.commit()
         except Exception as e:
-            log.error(f"Signal update failed: {e}")
+            log.error(f"Signal update failed for source_id={source_id}: {e}")
 
     @staticmethod
     def _domain(raw: str) -> str:

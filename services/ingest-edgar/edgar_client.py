@@ -154,20 +154,22 @@ class EdgarClient:
             from shared.clients.r2 import r2_key, upload
             key = r2_key("edgar", "form_d", date_str, parsed.get("accession_number", "unknown"))
             asyncio.get_event_loop().run_until_complete(upload(key, raw_xml, "text/xml"))
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"R2 archive failed for {parsed.get('accession_number')}: {e}")
 
     def write_signal(self, parsed):
         try:
             import asyncio
             from shared.clients.postgres import AsyncSessionLocal
             from shared.schemas.signals import Signal
+            entity_id = parsed.get("entity_id", "")
             signal = Signal(
-                entity_id=parsed.get("entity_id", "UNRESOLVED"),
+                entity_id=entity_id or "PENDING",
                 signal_type="form_d",
                 signal_date=datetime.fromisoformat(parsed.get("file_date", datetime.utcnow().isoformat())),
                 value=0.5, raw_data=parsed, source="edgar",
                 source_id=parsed.get("accession_number"),
+                resolution_status="resolved" if entity_id else "pending",
             )
             async def _w():
                 async with AsyncSessionLocal() as s:
@@ -182,5 +184,5 @@ class EdgarClient:
             import asyncio
             from shared.clients.redis_client import publish_signal
             asyncio.get_event_loop().run_until_complete(publish_signal(parsed))
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"Redis publish failed for {parsed.get('accession_number')}: {e}")

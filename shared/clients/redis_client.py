@@ -15,6 +15,7 @@ STREAMS = {
     "raw_signals": "alpha:stream:raw_signals",
     "resolved_signals": "alpha:stream:resolved_signals",
     "alerts": "alpha:stream:alerts",
+    "dlq": "alpha:stream:dlq",
 }
 
 _client: Optional[aioredis.Redis] = None
@@ -33,6 +34,30 @@ async def publish_signal(signal_data: Dict[str, Any], stream: str = "raw_signals
         STREAMS.get(stream, stream),
         {"payload": json.dumps(signal_data, default=str)},
         maxlen=100_000,
+        approximate=True,
+    )
+    return entry_id
+
+
+async def publish_to_dlq(
+    original_payload: Dict[str, Any],
+    error: str,
+    source_stream: str = "raw_signals",
+    retry_count: int = 0,
+) -> str:
+    """Send a failed message to the dead-letter queue with error context."""
+    client = await get_redis()
+    import datetime as _dt
+    entry_id: str = await client.xadd(
+        STREAMS["dlq"],
+        {
+            "payload": json.dumps(original_payload, default=str),
+            "error": str(error)[:1000],
+            "source_stream": source_stream,
+            "retry_count": str(retry_count),
+            "failed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        },
+        maxlen=10_000,
         approximate=True,
     )
     return entry_id

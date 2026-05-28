@@ -96,5 +96,5 @@ class GitHubArchiveClient:
             import asyncio
             from shared.clients.redis_client import publish_signal
             asyncio.get_event_loop().run_until_complete(publish_signal(signal_data))
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"Redis publish failed: {e}")

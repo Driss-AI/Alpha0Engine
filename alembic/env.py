@@ -28,6 +28,7 @@ from shared.schemas.catalyst_event import CatalystEvent  # noqa: F401
 from shared.schemas.brain_opportunity import BrainOpportunity  # noqa: F401
 from shared.schemas.brain_narrative import BrainNarrative  # noqa: F401
 from shared.schemas.company_news import CompanyNews  # noqa: F401
+from shared.schemas.ingestion_run import IngestionRun  # noqa: F401
 
 config = context.config
 

@@ -7,7 +7,7 @@ value: -1.0 bearish to +1.0 bullish
 from typing import Optional, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, UniqueConstraint
 import uuid
 
 
@@ -30,6 +30,9 @@ SIGNAL_SOURCES = [
 ]
 
 
+RESOLUTION_STATUSES = ["pending", "resolved", "failed"]
+
+
 class SignalBase(SQLModel):
     entity_id: str = Field(index=True)
     signal_type: str = Field(index=True)
@@ -39,10 +42,14 @@ class SignalBase(SQLModel):
     source: str
     source_id: Optional[str] = Field(default=None)
     notes: Optional[str] = Field(default=None)
+    resolution_status: str = Field(default="pending", index=True, max_length=20)
 
 
 class Signal(SignalBase, table=True):
     __tablename__ = "signals"
+    __table_args__ = (
+        UniqueConstraint("source", "source_id", "signal_type", name="uq_signal_source_type"),
+    )
     id: str = Field(default_factory=_new_id, primary_key=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
