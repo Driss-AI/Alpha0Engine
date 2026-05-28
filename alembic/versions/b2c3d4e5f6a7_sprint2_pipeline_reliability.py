@@ -38,7 +38,20 @@ def upgrade() -> None:
     op.execute("UPDATE signals SET resolution_status = 'pending' WHERE entity_id = 'UNRESOLVED'")
     op.execute("UPDATE signals SET resolution_status = 'resolved' WHERE entity_id != 'UNRESOLVED' AND resolution_status IS NULL")
 
-    # 3. Add unique constraint for signal idempotency (source + source_id + signal_type)
+    # 3. Deduplicate existing signals before adding unique constraint.
+    # Keep the newest row (by created_at) for each (source, source_id, signal_type) combo.
+    op.execute("""
+        DELETE FROM signals
+        WHERE source_id IS NOT NULL
+          AND id NOT IN (
+            SELECT DISTINCT ON (source, source_id, signal_type) id
+            FROM signals
+            WHERE source_id IS NOT NULL
+            ORDER BY source, source_id, signal_type, created_at DESC NULLS LAST
+          )
+    """)
+
+    # 4. Add unique constraint for signal idempotency (source + source_id + signal_type)
     # Only apply to rows where source_id is NOT NULL (many signals have NULL source_id)
     op.create_index(
         "uq_signal_source_type",
