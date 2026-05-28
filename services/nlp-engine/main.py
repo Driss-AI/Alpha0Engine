@@ -120,6 +120,13 @@ def main():
     # Init DB tables
     asyncio.get_event_loop().run_until_complete(init_db())
 
+    mode = os.environ.get("RUN_MODE", "loop")
+    if mode == "once":
+        log.info("RUN_MODE=once — running single cycle then exiting")
+        asyncio.get_event_loop().run_until_complete(run_nlp_cycle())
+        log.info("NLP Engine single run complete. Exiting.")
+        return
+
     # Run cycle
     asyncio.get_event_loop().run_until_complete(run_nlp_cycle())
     schedule.every(6).hours.do(lambda: asyncio.get_event_loop().run_until_complete(run_nlp_cycle()))

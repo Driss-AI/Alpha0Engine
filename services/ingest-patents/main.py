@@ -31,6 +31,14 @@ def run_weekly_ingest():
 
 def main():
     log.info("USPTO patent worker starting...")
+
+    mode = os.environ.get("RUN_MODE", "loop")
+    if mode == "once":
+        log.info("RUN_MODE=once — running single ingest then exiting")
+        run_weekly_ingest()
+        log.info("USPTO ingest complete. Exiting.")
+        return
+
     run_weekly_ingest()
     schedule.every().sunday.at("02:00").do(run_weekly_ingest)
     while True:

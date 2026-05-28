@@ -73,6 +73,14 @@ def run_daily_check():
 
 def main():
     log.info("13F Smart Money Tracker starting...")
+
+    mode = os.environ.get("RUN_MODE", "loop")
+    if mode == "once":
+        log.info("RUN_MODE=once — running single check then exiting")
+        run_daily_check()
+        log.info("13F check complete. Exiting.")
+        return
+
     run_daily_check()
     schedule.every().day.at("07:00").do(run_daily_check)
 

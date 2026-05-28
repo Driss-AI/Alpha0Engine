@@ -35,6 +35,14 @@ def run_hourly_ingest():
 
 def main():
     log.info("GitHub Archive worker starting...")
+
+    mode = os.environ.get("RUN_MODE", "loop")
+    if mode == "once":
+        log.info("RUN_MODE=once — running single ingest then exiting")
+        run_hourly_ingest()
+        log.info("GitHub Archive ingest complete. Exiting.")
+        return
+
     run_hourly_ingest()
     schedule.every().hour.at(":05").do(run_hourly_ingest)
     while True:

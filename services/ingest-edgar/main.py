@@ -45,6 +45,14 @@ def run_daily_ingest():
 
 def main():
     log.info("EDGAR worker starting...")
+
+    mode = os.environ.get("RUN_MODE", "loop")
+    if mode == "once":
+        log.info("RUN_MODE=once — running single ingest then exiting")
+        run_daily_ingest()
+        log.info("EDGAR ingest complete. Exiting.")
+        return
+
     run_daily_ingest()
     schedule.every().day.at("06:00").do(run_daily_ingest)
     while True:
