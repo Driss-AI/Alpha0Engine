@@ -25,6 +25,9 @@ from shared.schemas.watchlist import UserWatchlist  # noqa: F401
 from shared.schemas.ticker_timeline import TickerTimeline  # noqa: F401
 from shared.schemas.score_snapshot import ScoreSnapshot  # noqa: F401
 from shared.schemas.catalyst_event import CatalystEvent  # noqa: F401
+from shared.schemas.brain_opportunity import BrainOpportunity  # noqa: F401
+from shared.schemas.brain_narrative import BrainNarrative  # noqa: F401
+from shared.schemas.company_news import CompanyNews  # noqa: F401
 
 config = context.config
 
