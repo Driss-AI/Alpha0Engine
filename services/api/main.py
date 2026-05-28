@@ -79,7 +79,7 @@ SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
 
 def _inject_api_key(html: str) -> str:
     """Inject the API key into dashboard HTML so JS can authenticate."""
-    return html.replace("<script>", f"<script>const API_KEY='{API_SECRET_KEY}';", 1)
+    return html.replace("<script>\nconst API", f"<script>\nconst API_KEY='{API_SECRET_KEY}';\nconst API", 1)
 
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
