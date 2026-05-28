@@ -219,7 +219,9 @@ html,body { background:var(--bg); color:var(--t0); font-family:var(--mono); min-
 </footer>
 
 <script>
-const API = 'https://alpha0engine-production.up.railway.app/api/v1';
+const API = '/api/v1';
+if(typeof API_KEY==='undefined')var API_KEY='';
+const AUTH_HEADERS=API_KEY?{'X-API-Key':API_KEY}:{};
 const PASS = 0.6;
 let busy = false, currentTicker = null;
 
@@ -391,7 +393,7 @@ function showError(msg) {
 /* ── Load watchlist ─────────────────────────────────────── */
 async function loadWatchlist() {
   try {
-    const res = await fetch(API + '/1000x/watchlist?limit=8');
+    const res = await fetch(API + '/1000x/watchlist?limit=8',{headers:AUTH_HEADERS});
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const list = await res.json();
     const wlEl = document.getElementById('wl-btns');
@@ -431,7 +433,7 @@ async function loadTicker(ticker) {
   showLoading('Loading ' + ticker.toUpperCase() + '&hellip;');
 
   try {
-    const res = await fetch(API + '/1000x/' + ticker.toUpperCase());
+    const res = await fetch(API + '/1000x/' + ticker.toUpperCase(),{headers:AUTH_HEADERS});
     if (res.status === 404) {
       showError(ticker.toUpperCase() + ' not in screener.<br>Run a batch scan to include this ticker.');
       busy = false;

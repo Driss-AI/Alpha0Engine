@@ -186,6 +186,8 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
 
 <script>
 const API='';
+if(typeof API_KEY==='undefined')var API_KEY='';
+const AUTH_HEADERS=API_KEY?{'X-API-Key':API_KEY}:{};
 const $=s=>document.querySelector(s);
 const $$=s=>document.querySelectorAll(s);
 
@@ -205,7 +207,7 @@ function tick(){$('#clock').textContent=new Date().toISOString().slice(11,19);}
 setInterval(tick,1000);tick();
 
 // Helpers
-async function api(path){const r=await fetch(API+path);if(!r.ok)throw new Error(r.status);return r.json();}
+async function api(path){const r=await fetch(API+path,{headers:AUTH_HEADERS});if(!r.ok)throw new Error(r.status);return r.json();}
 function num(v){return v!=null?v.toLocaleString():'—';}
 function usd(v){if(!v)return'—';if(v>=1e9)return'$'+(v/1e9).toFixed(2)+'B';if(v>=1e6)return'$'+(v/1e6).toFixed(1)+'M';return'$'+v.toLocaleString();}
 function sc(v){return v!=null?v.toFixed(3):'—';}
@@ -611,14 +613,14 @@ async function addToWatchlist(){
   if(!ticker)return;
   const priority=$('#wl-pri').value;
   try{
-    await fetch(API+'/api/v1/watchlist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticker,priority})});
+    await fetch(API+'/api/v1/watchlist',{method:'POST',headers:{...AUTH_HEADERS,'Content-Type':'application/json'},body:JSON.stringify({ticker,priority})});
     $('#wl-ticker').value='';
     await loadWatchlist();
   }catch(e){alert('Failed: '+e.message);}
 }
 
 async function removeFromWatchlist(id){
-  try{await fetch(API+'/api/v1/watchlist/'+id,{method:'DELETE'});await loadWatchlist();}catch(e){alert('Failed: '+e.message);}
+  try{await fetch(API+'/api/v1/watchlist/'+id,{method:'DELETE',headers:AUTH_HEADERS});await loadWatchlist();}catch(e){alert('Failed: '+e.message);}
 }
 
 function openDeepDive(ticker){
@@ -688,7 +690,7 @@ async function pinCatalyst(){
   const dateVal=$('#cat-pin-date').value;
   if(dateVal)body.expected_date=dateVal;
   try{
-    await fetch(API+'/api/v1/catalysts/pin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await fetch(API+'/api/v1/catalysts/pin',{method:'POST',headers:{...AUTH_HEADERS,'Content-Type':'application/json'},body:JSON.stringify(body)});
     $('#cat-pin-ticker').value='';$('#cat-pin-title').value='';$('#cat-pin-date').value='';
     await loadCatalysts();
   }catch(e){alert('Failed: '+e.message);}

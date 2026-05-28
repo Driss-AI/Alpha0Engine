@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite://")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ["RATE_LIMIT"] = "10000/minute"
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 API_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 load_dotenv()
 
-from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, IS_PROD, LOG_LEVEL
+from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, IS_PROD, LOG_LEVEL, API_SECRET_KEY
 
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
 logger = logging.getLogger("alpha0-api")
@@ -77,17 +77,22 @@ SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
 
 # ── Public routes (no auth: dashboard HTML + health) ──
 
+def _inject_api_key(html: str) -> str:
+    """Inject the API key into dashboard HTML so JS can authenticate."""
+    return html.replace("<script>", f"<script>const API_KEY='{API_SECRET_KEY}';", 1)
+
+
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 async def root():
     if DASHBOARD_HTML.exists():
-        return HTMLResponse(DASHBOARD_HTML.read_text())
+        return HTMLResponse(_inject_api_key(DASHBOARD_HTML.read_text()))
     return HTMLResponse("<h1>Alpha0Engine</h1><p>Dashboard loading...</p>")
 
 
 @app.get("/screener", response_class=HTMLResponse, include_in_schema=False)
 async def screener():
     if SCREENER_HTML.exists():
-        return HTMLResponse(SCREENER_HTML.read_text())
+        return HTMLResponse(_inject_api_key(SCREENER_HTML.read_text()))
     return HTMLResponse("<h1>1000x Screener</h1><p>UI not found.</p>")
 
 
