@@ -164,6 +164,7 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
   <button class="nav-btn" data-tab="risk">Risk Radar</button>
   <button class="nav-btn" data-tab="signals">Signals</button>
   <button class="nav-btn" data-tab="ipo">IPO Tracker</button>
+  <button class="nav-btn hot" data-tab="brain" style="color:var(--cyan)">Brain</button>
   <button class="nav-btn" data-tab="watchlist" style="color:var(--amber)">Watchlist</button>
   <button class="nav-btn" data-tab="catalysts">Catalysts</button>
   <button class="nav-btn" data-tab="deltas">Deltas</button>
@@ -177,6 +178,7 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
   <div class="section" id="sec-risk"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading risk radar&hellip;</div></div></div>
   <div class="section" id="sec-signals"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading signals&hellip;</div></div></div>
   <div class="section" id="sec-ipo"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading IPO candidates&hellip;</div></div></div>
+  <div class="section" id="sec-brain"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading brain picks&hellip;</div></div></div>
   <div class="section" id="sec-watchlist"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading watchlist&hellip;</div></div></div>
   <div class="section" id="sec-catalysts"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading catalyst calendar&hellip;</div></div></div>
   <div class="section" id="sec-deltas"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading score deltas&hellip;</div></div></div>
@@ -194,7 +196,7 @@ $$('.nav-btn').forEach(btn=>{
     btn.classList.add('active');
     $$('.section').forEach(s=>s.classList.remove('active'));
     $(`#sec-${btn.dataset.tab}`).classList.add('active');
-    ({screener:loadScreener,'1000x':load1000x,risk:loadRisk,signals:loadSignals,ipo:loadIPO,watchlist:loadWatchlist,catalysts:loadCatalysts,deltas:loadDeltas}[btn.dataset.tab]||function(){})();
+    ({screener:loadScreener,'1000x':load1000x,risk:loadRisk,signals:loadSignals,ipo:loadIPO,brain:loadBrain,watchlist:loadWatchlist,catalysts:loadCatalysts,deltas:loadDeltas}[btn.dataset.tab]||function(){})();
   });
 });
 
@@ -762,6 +764,153 @@ async function loadDeltas(){
     $('#sec-deltas').innerHTML=html;
     gsap.fromTo('#sec-deltas .stat,#sec-deltas .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,stagger:0.04,ease:'power2.out'});
   }catch(e){$('#sec-deltas').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
+}
+
+// ── BRAIN (AI Picks) ─────────────────────────────────────────────────────────
+let brainDays=30,brainConv='',brainPick=null;
+function brainConvBadge(c){
+  const m={HIGH:'tier-conviction',MEDIUM:'tier-high',LOW:'tier-watch',NONE:'tier-pass'};
+  return`<span class="badge ${m[c]||'tier-pass'}">${c||'—'}</span>`;
+}
+function brainNarrConvBadge(c){
+  const m={STRONG_BUY:'tier-conviction',BUY:'tier-high',HOLD:'tier-watch',CAUTIOUS:'tier-speculative',AVOID:'tier-pass'};
+  return`<span class="badge ${m[c]||'tier-pass'}">${c||'—'}</span>`;
+}
+function confBar(v){
+  const pct=Math.round((v||0)*100);
+  const col=pct>=70?'var(--pass)':pct>=40?'var(--amber)':'var(--t2)';
+  return`<div style="display:flex;align-items:center;gap:6px"><div style="width:50px;height:3px;background:var(--b0);border-radius:2px;overflow:hidden"><div style="width:${pct}%;height:100%;background:${col};border-radius:2px"></div></div><span class="mono" style="font-size:10px;color:${col}">${pct}%</span></div>`;
+}
+
+async function loadBrain(){
+  try{
+    const [picks,stats]=await Promise.all([
+      api(`/api/v1/brain/picks?days=${brainDays}${brainConv?'&conviction='+brainConv:''}&limit=50`),
+      api('/api/v1/brain/stats?days='+brainDays),
+    ]);
+
+    let deepDive='';
+    if(brainPick){
+      try{
+        const p=brainPick;
+        const narr=await api(`/api/v1/brain/${p.ticker}/narrative`).catch(()=>null);
+        const signalRows=(p.key_signals||[]).map(s=>`
+          <div style="display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--b0)">
+            <span class="mono" style="font-size:9px;color:var(--cyan);flex-shrink:0">${s.source_id||''}</span>
+            <span style="font-size:10px;color:var(--t1)">${s.summary||''}</span>
+          </div>`).join('');
+        const catalystRows=(p.catalysts||[]).map(c=>`
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--b0)">
+            <span style="font-size:10px">${c.description||''}</span>
+            <span class="mono" style="font-size:9px;color:var(--t2)">${c.expected_date||'—'}</span>
+          </div>`).join('');
+
+        deepDive=`
+        <div class="panel panel-full" style="margin-bottom:16px">
+          <div class="sec-lbl" style="display:flex;align-items:center;justify-content:space-between">
+            <span style="color:var(--cyan)">Brain Deep Dive — ${p.ticker} (${p.company_name||''})</span>
+            <div style="display:flex;align-items:center;gap:10px">
+              ${brainConvBadge(p.conviction)}
+              ${confBar(p.confidence_score)}
+              ${p.return_multiple?`<span class="mono" style="font-weight:700;color:var(--lime)">${p.return_multiple}x</span>`:''}
+              <button onclick="brainPick=null;loadBrain()" style="font-family:var(--mono);font-size:9px;background:none;border:1px solid var(--b1);color:var(--t2);padding:4px 10px;cursor:pointer;border-radius:2px">✕ Close</button>
+            </div>
+          </div>
+
+          <div style="margin:16px 0;padding:16px;background:var(--s2);border-radius:4px;border-left:2px solid var(--cyan)">
+            <div style="font-size:8px;letter-spacing:0.2em;color:var(--t2);text-transform:uppercase;margin-bottom:8px">Thesis</div>
+            <div style="font-size:12px;line-height:1.7;color:var(--t0)">${p.thesis||'—'}</div>
+          </div>
+
+          <div class="panels" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+            <div class="panel" style="border-left:2px solid var(--pass)">
+              <div class="sec-lbl" style="color:var(--pass)">Bull Case</div>
+              <div style="font-size:11px;line-height:1.6;color:var(--t1)">${p.upside_scenario||'—'}</div>
+              ${p.price_target_bull?`<div class="mono" style="font-size:13px;font-weight:700;color:var(--pass);margin-top:8px">Target: $${p.price_target_bull}</div>`:''}
+            </div>
+            <div class="panel" style="border-left:2px solid var(--fail)">
+              <div class="sec-lbl" style="color:var(--fail)">Bear Case</div>
+              <div style="font-size:11px;line-height:1.6;color:var(--t1)">${p.downside_scenario||'—'}</div>
+              ${p.price_target_bear?`<div class="mono" style="font-size:13px;font-weight:700;color:var(--fail);margin-top:8px">Floor: $${p.price_target_bear}</div>`:''}
+            </div>
+          </div>
+
+          <div class="panels" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+            <div class="panel">
+              <div class="sec-lbl">Key Signals (${(p.key_signals||[]).length})</div>
+              ${signalRows||'<div class="empty" style="padding:10px">No signals</div>'}
+            </div>
+            <div class="panel">
+              <div class="sec-lbl">Catalysts</div>
+              ${catalystRows||'<div class="empty" style="padding:10px">No catalysts</div>'}
+            </div>
+          </div>
+
+          <div class="stats-row" style="grid-template-columns:repeat(5,1fr);margin-bottom:0">
+            ${statCard('Signals',p.signal_count||0,'cited','var(--cyan)','var(--cyan)')}
+            ${statCard('Sources',p.source_diversity||0,'distinct','var(--blue)','var(--blue)')}
+            ${statCard('Lenses',p.lenses_active+'/5','active','var(--amber)','var(--amber)')}
+            ${statCard('Horizon',p.time_horizon||'—','','var(--t0)','var(--b2)')}
+            ${statCard('Type',p.thesis_type||'—','','var(--t0)','var(--b2)')}
+          </div>
+
+          ${narr?`
+          <div style="margin-top:16px;padding:16px;background:var(--s2);border-radius:4px">
+            <div style="font-size:8px;letter-spacing:0.2em;color:var(--t2);text-transform:uppercase;margin-bottom:8px">Full Narrative (v${narr.version||1})</div>
+            <div style="font-size:11px;line-height:1.8;color:var(--t1);white-space:pre-wrap">${narr.narrative_text||''}</div>
+          </div>`:''}
+        </div>`;
+      }catch(e){deepDive=`<div class="empty">Could not load deep dive: ${e.message}</div>`;}
+    }
+
+    const st=stats||{};
+    const byConv=st.by_conviction||{};
+
+    const html=`
+    ${deepDive}
+
+    <div class="stats-row" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+      ${statCard('Brain Picks',st.total_opportunities||0,brainDays+'d window','var(--cyan)','var(--cyan)')}
+      ${statCard('HIGH Conviction',(byConv.HIGH||0),'','var(--pass)','var(--pass)')}
+      ${statCard('MEDIUM',(byConv.MEDIUM||0),'','var(--blue)','var(--blue)')}
+      ${statCard('Avg Confidence',(st.avg_confidence_score?Math.round(st.avg_confidence_score*100)+'%':'—'),'','var(--amber)','var(--amber)')}
+    </div>
+
+    <div class="filter-row">
+      <span class="filter-lbl">Window</span>
+      ${[7,14,30,90].map(d=>`<button class="filter-btn ${brainDays===d?'active':''}" onclick="brainDays=${d};loadBrain()">${d}d</button>`).join('')}
+      <span class="filter-lbl" style="margin-left:12px">Conviction</span>
+      <button class="filter-btn ${brainConv===''?'active':''}" onclick="brainConv='';loadBrain()">All</button>
+      ${['HIGH','MEDIUM','LOW'].map(c=>`<button class="filter-btn ${brainConv===c?'active':''}" onclick="brainConv='${c}';loadBrain()">${c}</button>`).join('')}
+    </div>
+
+    <div class="panel panel-full">
+      ${picks.length?`<div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Ticker</th><th>Company</th><th>Conviction</th><th>Confidence</th><th>Type</th><th>Signals</th><th>Lenses</th><th>Sources</th><th>Return</th><th>Horizon</th><th>Generated</th></tr></thead>
+        <tbody>${picks.map(p=>`<tr style="cursor:pointer" onclick='brainPick=${JSON.stringify(p).replace(/'/g,"&#39;")};loadBrain()'>
+          <td class="mono" style="font-weight:700;color:var(--cyan)">${p.ticker||'—'}</td>
+          <td class="name">${p.company_name||'—'}</td>
+          <td>${brainConvBadge(p.conviction)}</td>
+          <td>${confBar(p.confidence_score)}</td>
+          <td style="font-size:10px">${p.thesis_type||'—'}</td>
+          <td class="mono">${p.signal_count||0}</td>
+          <td class="mono">${p.lenses_active}/5</td>
+          <td class="mono">${p.source_diversity||0}</td>
+          <td class="mono" style="font-weight:700;color:${p.return_multiple>=10?'var(--lime)':p.return_multiple>=5?'var(--pass)':'var(--t1)'}">${p.return_multiple?p.return_multiple+'x':'—'}</td>
+          <td style="font-size:10px">${p.time_horizon||'—'}</td>
+          <td style="font-size:10px;color:var(--t2)">${(p.generated_at||'').substring(0,10)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`:`
+      <div class="empty" style="padding:60px">
+        <div style="font-size:28px;margin-bottom:12px;color:var(--cyan)">&#9670;</div>
+        <div style="margin-bottom:6px">No picks yet</div>
+        <div style="font-size:9px;color:var(--t2);letter-spacing:0.08em">The Brain runs daily at 06:00 UTC. High-conviction picks appear here when they pass the threshold gate (3+ signals, 2+ lenses, 2+ sources).</div>
+      </div>`}
+    </div>`;
+
+    $('#sec-brain').innerHTML=html;
+    gsap.fromTo('#sec-brain .stat,#sec-brain .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,stagger:0.04,ease:'power2.out'});
+  }catch(e){$('#sec-brain').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
 }
 
 loadOverview();
