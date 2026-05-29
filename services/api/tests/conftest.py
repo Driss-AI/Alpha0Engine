@@ -7,6 +7,14 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite://")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ["RATE_LIMIT"] = "10000/minute"
 
+# Force auth dev-bypass as the default for the test suite. CI sets
+# ENVIRONMENT=test and API_SECRET_KEY, which would otherwise enforce auth on
+# every endpoint and 401 the non-auth tests. test_auth.py patches
+# middleware.auth directly, so it still exercises real key enforcement.
+# These must be set BEFORE `from main import app` (which imports shared.config).
+os.environ["ENVIRONMENT"] = "development"
+os.environ.pop("API_SECRET_KEY", None)
+
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 API_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 for p in (PROJECT_ROOT, API_DIR):
