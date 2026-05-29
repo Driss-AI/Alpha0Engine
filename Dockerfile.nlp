@@ -1,8 +1,21 @@
-FROM python:3.12-slim
+# ---- builder ----
+FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ libpq-dev python3-dev && rm -rf /var/lib/apt/lists/*
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 COPY services/nlp-engine/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -r requirements.txt
+
+# ---- runtime ----
+FROM python:3.12-slim-bookworm
+ENV PATH="/opt/venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --create-home --uid 10001 appuser
+WORKDIR /app
+COPY --from=builder /opt/venv /opt/venv
 COPY shared/ ./shared/
 COPY services/nlp-engine/ .
+USER appuser
 CMD ["python", "main.py"]

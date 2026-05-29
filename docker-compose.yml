@@ -3,9 +3,9 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     environment:
-      POSTGRES_DB: alpha_engine
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ${POSTGRES_DB:-alpha_engine}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in your .env}
     ports: ["5432:5432"]
     volumes: [postgres_data:/var/lib/postgresql/data]
     healthcheck:
@@ -29,7 +29,7 @@ services:
     ports: ["8000:8000"]
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alpha_engine}
       REDIS_URL: redis://redis:6379/0
       ENVIRONMENT: development
     depends_on:
@@ -41,7 +41,7 @@ services:
     build: {context: ., dockerfile: Dockerfile.edgar}
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alpha_engine}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres: {condition: service_healthy}
@@ -51,7 +51,7 @@ services:
     build: {context: ., dockerfile: Dockerfile.patents}
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alpha_engine}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres: {condition: service_healthy}
@@ -60,7 +60,7 @@ services:
     build: {context: ., dockerfile: Dockerfile.github}
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alpha_engine}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres: {condition: service_healthy}
@@ -70,7 +70,7 @@ services:
     build: {context: ., dockerfile: Dockerfile.resolver}
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alpha_engine}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres: {condition: service_healthy}
