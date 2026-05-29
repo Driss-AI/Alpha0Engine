@@ -1,7 +1,10 @@
 """USPTO Patent Ingest Worker — weekly Sunday 02:00 UTC"""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(__file__))
-import logging, time, schedule
+import logging
+import time
+import schedule
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from uspto_client import UsptoClient

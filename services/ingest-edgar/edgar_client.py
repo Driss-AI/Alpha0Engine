@@ -7,7 +7,10 @@ Field mapping (from actual EFTS response):
   display_names: list e.g. ["Junction Health, Inc.  (CIK 0002031239)"]
   file_date: "2026-05-22"
 """
-import os, logging, requests, re
+import os
+import logging
+import requests
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
@@ -64,7 +67,7 @@ class EdgarClient:
                     # EDGAR URL: CIK without leading zeros, accession without dashes
                     cik_stripped = str(int(cik))  # remove leading zeros
                     acc_nodashes = adsh.replace("-", "")
-                    
+
                     # Build direct XML URL if we know the filename
                     if primary_doc:
                         edgar_url = f"https://www.sec.gov/Archives/edgar/data/{cik_stripped}/{acc_nodashes}/{primary_doc}"

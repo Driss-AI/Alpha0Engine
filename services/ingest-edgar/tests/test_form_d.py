@@ -1,4 +1,5 @@
-import pytest, sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from form_d_parser import parse_form_d
 

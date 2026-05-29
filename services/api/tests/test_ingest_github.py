@@ -7,8 +7,7 @@ import sys
 import os
 import gzip
 import json
-import pytest
-from unittest.mock import patch, MagicMock, PropertyMock
+from unittest.mock import patch, MagicMock
 import requests
 
 GITHUB_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "ingest-github"))

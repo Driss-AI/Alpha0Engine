@@ -4,9 +4,12 @@ Form D filed within 15 days of any private placement >$1M (US).
 Pipeline: EFTS query -> XML download -> R2 archive -> Postgres signal -> Redis stream
 EDGAR Fair Access: max 10 req/sec, User-Agent required.
 """
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(__file__))
-import logging, time, asyncio
+import logging
+import time
+import asyncio
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from edgar_client import EdgarClient

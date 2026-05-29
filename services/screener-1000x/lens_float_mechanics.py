@@ -166,7 +166,6 @@ async def fetch_finra_short_interest(ticker: str) -> Optional[Dict[str, Any]]:
     # Note: FINRA's direct API requires registration.
     # We use the SEC's short interest compilation as fallback.
     try:
-        url = f"https://www.finra.org/finra-data/browse-catalog/short-interest/data"
         # This is a paginated UI — for production, use FINRA API with key.
         # For now, return None and rely on SEC/signal data.
         logger.debug(f"FINRA short interest lookup for {ticker} — using signal fallback")

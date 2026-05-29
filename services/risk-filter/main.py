@@ -4,7 +4,10 @@ Risk Filter — Main Worker
 Module 4 worker. Runs daily after fundamental-screener.
 Assesses hype, illiquidity, and composite risk for all entities.
 """
-import os, sys, asyncio, logging
+import os
+import sys
+import asyncio
+import logging
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))

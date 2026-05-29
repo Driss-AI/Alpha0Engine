@@ -1,7 +1,10 @@
 """GitHub Archive Ingest Worker — hourly at :05"""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(__file__))
-import logging, schedule, time
+import logging
+import schedule
+import time
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from gh_archive_client import GitHubArchiveClient

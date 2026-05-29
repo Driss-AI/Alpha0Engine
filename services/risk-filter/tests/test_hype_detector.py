@@ -1,7 +1,8 @@
 """Tests for hype detection."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from hype_detector import detect_hype_patterns, compute_hype_score, compute_substance_score
+from hype_detector import detect_hype_patterns
 
 
 def test_empty_signals():

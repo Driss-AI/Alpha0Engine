@@ -8,7 +8,6 @@ Test 2 (requires Postgres, marked for CI): upgrade/downgrade round-trip.
   Skipped locally if DATABASE_URL points to SQLite.
 """
 import os
-import sys
 import pytest
 from alembic.config import Config
 from alembic.script import ScriptDirectory

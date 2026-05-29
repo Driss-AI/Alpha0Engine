@@ -1,11 +1,10 @@
 """
 IPO Proximity Router — pre-IPO candidate rankings
 """
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, Depends, Query
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy import JSON
 
 from shared.schemas.signals import Signal, SignalRead
 from shared.clients.postgres import get_session

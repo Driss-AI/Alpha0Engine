@@ -16,7 +16,7 @@ Most days this returns 5–30 candidates. Zero is a valid answer.
 """
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 from sqlmodel import select, col, func
 from sqlmodel.ext.asyncio.session import AsyncSession

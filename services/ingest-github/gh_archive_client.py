@@ -2,7 +2,10 @@
 GitHub Archive Client — https://www.gharchive.org/
 URL format: https://data.gharchive.org/{YYYY-MM-DD-H}.json.gz
 """
-import gzip, json, logging, requests
+import gzip
+import json
+import logging
+import requests
 from datetime import datetime
 from typing import List, Dict, Any
 

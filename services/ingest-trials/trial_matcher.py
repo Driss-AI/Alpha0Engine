@@ -11,7 +11,7 @@ Examples:
 """
 import logging
 import re
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,13 @@
 NLP Engine — Megatrend Detection + IPO Proximity Scoring
 Runs on a 6-hour cycle. All free data.
 """
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(__file__))
-import logging, schedule, time, asyncio
+import logging
+import schedule
+import time
+import asyncio
 from dotenv import load_dotenv
 
 load_dotenv()

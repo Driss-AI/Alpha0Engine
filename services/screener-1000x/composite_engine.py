@@ -16,7 +16,7 @@ Earnings inflection alone isn't enough without demand tailwind.
 The conviction score rewards convergence across lenses.
 """
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 

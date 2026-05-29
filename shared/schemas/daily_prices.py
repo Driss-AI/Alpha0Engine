@@ -9,10 +9,10 @@ This is the foundational data layer that makes every scoring lens accurate:
   - Volume for days-to-cover (Float Mechanics)
   - Price-volume breakout detection
 """
-from typing import Optional, Dict, Any
+from typing import Optional
 from datetime import datetime, date
-from sqlmodel import SQLModel, Field, Column
-from sqlalchemy import JSON, UniqueConstraint
+from sqlmodel import SQLModel, Field
+from sqlalchemy import UniqueConstraint
 import uuid
 
 

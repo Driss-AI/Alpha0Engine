@@ -7,7 +7,7 @@ Float Mechanics, Smart Money Accumulation.
 
 Each public entity gets one EquityScreen row, updated daily.
 """
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from datetime import datetime
 from sqlmodel import SQLModel, Field, Column
 from sqlalchemy import JSON

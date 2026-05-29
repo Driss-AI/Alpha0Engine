@@ -87,7 +87,6 @@ def _extract_study(study_data: dict) -> Dict[str, Any]:
     design_mod = proto.get("designModule", {})
     conditions_mod = proto.get("conditionsModule", {})
     interventions_mod = proto.get("armsInterventionsModule", {})
-    desc_mod = proto.get("descriptionModule", {})
 
     # Sponsor info
     lead_sponsor = _safe_get(sponsor_mod, "leadSponsor", "name", default="")
@@ -179,10 +178,11 @@ async def search_trials(
         params["query.intr"] = intervention
 
     all_studies = []
+    next_token = None
 
     async with httpx.AsyncClient(timeout=30) as client:
         for page in range(max_pages):
-            if page > 0:
+            if page > 0 and next_token:
                 params["pageToken"] = next_token
 
             try:

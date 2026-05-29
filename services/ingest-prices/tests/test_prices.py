@@ -6,13 +6,11 @@ Unit tests for price parsing, market cap computation, and universe discovery.
 import sys
 import os
 import pytest
-from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from price_fetcher import _parse_single_ticker_df, fetch_universe_tickers_sec
 import pandas as pd
-import numpy as np
 
 
 class TestPriceParsing:

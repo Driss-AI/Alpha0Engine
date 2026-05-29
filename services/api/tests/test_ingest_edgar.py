@@ -5,7 +5,6 @@ responses gracefully — no crashes, proper logging.
 """
 import sys
 import os
-import pytest
 from unittest.mock import patch, MagicMock
 import requests
 
@@ -98,7 +97,6 @@ def test_download_filing_500_returns_none():
 def test_archive_to_r2_failure_logs_not_crashes(caplog):
     client = EdgarClient()
     with patch.dict("sys.modules", {"shared.clients.r2": MagicMock()}):
-        import importlib
         r2_mod = sys.modules["shared.clients.r2"]
         r2_mod.upload = MagicMock(side_effect=Exception("R2 bucket unreachable"))
         client.archive_to_r2({"accession_number": "test"}, "<xml/>", "2026-05-28")

@@ -14,7 +14,7 @@ Usage:
 """
 import asyncio
 import logging
-from typing import TypeVar, Callable, Any, Optional
+from typing import TypeVar, Callable, Any
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +40,10 @@ async def with_retry(
         max_delay: Maximum delay between retries
         name: Label for log messages
     """
-    last_error = None
-
     for attempt in range(max_retries + 1):
         try:
             return await func(*args, **kwargs)
         except Exception as e:
-            last_error = e
             if attempt < max_retries:
                 delay = min(base_delay * (2 ** attempt), max_delay)
 

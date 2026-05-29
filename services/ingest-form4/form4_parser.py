@@ -13,8 +13,7 @@ Form 4 structure:
 We focus on nonDerivativeTable for direct stock buys/sells.
 """
 import logging
-import re
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)

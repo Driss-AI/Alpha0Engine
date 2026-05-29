@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient
 
 # The conftest stubs shared.clients.postgres and sets up the test DB.
 # For auth tests we need to control the API_SECRET_KEY and IS_DEV flags.

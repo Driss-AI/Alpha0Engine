@@ -5,7 +5,10 @@ Old RSS decommissioned Feb 27, 2026. New approach:
 2. USPTO Open Data Portal bulk downloads
 3. FreePatentsOnline RSS (third-party, always free)
 """
-import os, logging, requests, re
+import os
+import logging
+import requests
+import re
 from datetime import datetime
 from typing import List, Dict, Any
 

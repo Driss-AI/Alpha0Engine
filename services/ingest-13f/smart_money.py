@@ -10,7 +10,9 @@ Key detection:
   When a fund known for PUBLIC equities (13F filer) also appears in
   a PRIVATE placement (Form D), that company is likely pre-IPO.
 """
-import os, logging, requests, re, json
+import os
+import logging
+import requests
 from datetime import datetime, timedelta
 from typing import List, Dict, Any
 

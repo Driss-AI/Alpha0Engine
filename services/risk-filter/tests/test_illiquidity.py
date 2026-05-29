@@ -1,5 +1,6 @@
 """Tests for illiquidity risk scoring."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from illiquidity_scorer import compute_illiquidity_risk, score_runway_risk, score_signal_concentration
 

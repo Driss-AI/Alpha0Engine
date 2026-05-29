@@ -7,7 +7,6 @@ Uses reference patterns: SPRB (binary catalyst) and SNDK (earnings inflection).
 import sys
 import os
 import pytest
-import asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 

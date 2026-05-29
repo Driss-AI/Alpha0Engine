@@ -3,9 +3,12 @@ Entity Resolver — Redis stream consumer + daily batch re-resolution.
 Resolution order: CIK > domain > github_org > fuzzy name > create new
 Features: retry counter (max 3), dead-letter queue for poison messages.
 """
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.dirname(__file__))
-import json, logging, asyncio
+import json
+import logging
+import asyncio
 from dotenv import load_dotenv
 from resolver import EntityResolver
 

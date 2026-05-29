@@ -17,7 +17,7 @@ import sys
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 

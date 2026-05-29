@@ -38,7 +38,6 @@ async def prometheus_metrics(session: AsyncSession = Depends(get_session)):
     """Prometheus exposition format metrics."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
-    yesterday = today - timedelta(days=1)
     week_ago = today - timedelta(days=7)
 
     lines = []

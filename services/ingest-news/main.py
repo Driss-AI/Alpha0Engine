@@ -15,7 +15,7 @@ import sys
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional, Set
+from typing import List, Dict, Any, Set
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import httpx
-from sqlmodel import select, col
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity

@@ -11,7 +11,7 @@ Classifies 8-K filings by item type and detects catalyst keywords.
 """
 import logging
 import re
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 logger = logging.getLogger(__name__)
 

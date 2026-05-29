@@ -1,0 +1,18 @@
+# Ruff linter configuration for Alpha0Engine
+target-version = "py312"
+line-length = 120
+
+[lint]
+select = ["E", "F", "W"]
+ignore = [
+    "E402",   # module-import-not-at-top — services use sys.path.insert before imports
+    "E501",   # line-too-long — handled by formatter, not linter
+    "E701",   # multiple-statements-on-one-line — used for compact scoring thresholds
+    "E712",   # true-false-comparison — SQLAlchemy requires `column == True` syntax
+    "E741",   # ambiguous-variable-name — false positives on short math vars
+    "F541",   # f-string-missing-placeholders — sometimes used intentionally
+]
+
+[lint.per-file-ignores]
+"services/*/main.py" = ["E402"]
+"alembic/*" = ["F401"]

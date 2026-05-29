@@ -2,13 +2,13 @@
 Prices Router — Market data API endpoints
 Latest prices, penny stock filtering, price-enhanced screener data.
 """
-from typing import List, Optional
-from datetime import date, timedelta
+from typing import Optional
+from datetime import date
 from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlmodel import select, col, func
+from sqlmodel import select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from shared.schemas.daily_prices import DailyPrice, DailyPriceRead, PriceSnapshot
+from shared.schemas.daily_prices import DailyPrice
 from shared.schemas.entities import Entity
 from shared.clients.postgres import get_session
 

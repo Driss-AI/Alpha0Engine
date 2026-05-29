@@ -9,3 +9,8 @@ httpx==0.27.0
 boto3==1.34.100
 alembic==1.18.4
 slowapi==0.1.9
+
+# Test-only deps (CI imports the entity-resolver and uses an in-memory SQLite DB)
+aiosqlite==0.20.0
+rapidfuzz==3.9.0
+tldextract==5.1.2

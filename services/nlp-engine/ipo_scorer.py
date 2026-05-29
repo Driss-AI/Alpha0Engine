@@ -29,7 +29,6 @@ class IPOProximityScorer:
         """Score all private entities for IPO proximity."""
         from shared.clients.postgres import AsyncSessionLocal
         from shared.schemas.entities import Entity
-        from shared.schemas.signals import Signal
         from sqlmodel import select
 
         async with AsyncSessionLocal() as session:
@@ -59,7 +58,6 @@ class IPOProximityScorer:
         from shared.clients.postgres import AsyncSessionLocal
         from shared.schemas.signals import Signal
         from sqlmodel import select
-        from sqlalchemy import func
 
         now = datetime.utcnow()
         twelve_months = now - timedelta(days=365)

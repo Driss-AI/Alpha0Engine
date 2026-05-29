@@ -8,7 +8,6 @@ stores results in equity_screens table.
 import os
 import sys
 import asyncio
-import logging
 from datetime import datetime, timezone
 
 # Add project root to path
@@ -33,7 +32,7 @@ from lens_smart_money import score_smart_money
 from composite_engine import compute_1000x_score
 from shared.services.snapshots import write_daily_snapshots
 
-from shared.logging import setup_logging, get_logger, Timer
+from shared.logging import setup_logging, get_logger
 
 setup_logging("screener-1000x")
 logger = get_logger("screener-1000x")

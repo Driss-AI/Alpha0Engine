@@ -18,7 +18,6 @@ import os
 import sys
 import asyncio
 import logging
-import time
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 
@@ -29,7 +28,6 @@ load_dotenv()
 
 import httpx
 from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.signals import Signal

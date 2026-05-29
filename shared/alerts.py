@@ -11,8 +11,6 @@ Configuration via environment variables:
     ALERT_WEBHOOK_URL — Discord or Slack webhook URL
     ALERT_CHANNEL — optional channel override (Slack only)
 """
-import asyncio
-import json
 import logging
 import os
 from datetime import datetime, timezone

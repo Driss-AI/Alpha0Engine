@@ -11,8 +11,7 @@ yfinance constraints:
   - Data delayed ~15-20 min during market hours
 """
 import logging
-from typing import Dict, Any, Optional, List, Tuple
-from datetime import datetime, date, timedelta
+from typing import Dict, Any, List
 
 import yfinance as yf
 import pandas as pd

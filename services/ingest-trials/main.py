@@ -24,7 +24,7 @@ import os
 import sys
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -38,7 +38,7 @@ from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.signals import Signal
 
-from ct_client import search_trials, search_by_sponsor, CATALYST_PHASES, ACTIVE_STATUSES
+from ct_client import search_trials, search_by_sponsor
 from trial_matcher import match_sponsor_indexed, build_entity_index
 
 logging.basicConfig(
@@ -183,7 +183,6 @@ async def run_trial_ingestion():
         entity_index = build_entity_index(entities)
 
         all_trials = []
-        matched_trials = []
 
         # ── Strategy 1: Search by company name for biotech entities ──
         search_names = set()

@@ -1,5 +1,6 @@
 """Tests for composite risk engine."""
-import sys, os
+import sys
+import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from risk_engine import compute_risk_score
 

@@ -4,7 +4,6 @@ Uses all-MiniLM-L6-v2 (384 dims, CPU, fast).
 Processes ALL signal types.
 """
 import logging
-from typing import List
 from sentence_transformers import SentenceTransformer
 
 log = logging.getLogger(__name__)

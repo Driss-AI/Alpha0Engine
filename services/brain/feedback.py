@@ -18,7 +18,7 @@ from typing import Dict, Any, Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from sqlmodel import select, col
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.brain_opportunity import BrainOpportunity

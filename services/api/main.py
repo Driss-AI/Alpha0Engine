@@ -2,7 +2,9 @@
 Alpha0Engine — FastAPI Gateway v0.6.0
 Serves API endpoints + web dashboard at root.
 """
-import sys, os, logging, time
+import sys
+import os
+import time
 sys.path.insert(0, os.path.dirname(__file__))
 
 from contextlib import asynccontextmanager
@@ -14,14 +16,14 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 load_dotenv()
 
-from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, IS_PROD, LOG_LEVEL, API_SECRET_KEY
+from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, LOG_LEVEL, API_SECRET_KEY
 from shared.logging import setup_logging, get_logger
 
 setup_logging("alpha0-api", level=LOG_LEVEL)
 logger = get_logger("alpha0-api")
 
 from shared.clients.postgres import create_db_and_tables
-from middleware.auth import require_api_key, require_admin_key
+from middleware.auth import require_api_key
 from middleware.rate_limit import setup_rate_limiting
 from routers import (
     health,
