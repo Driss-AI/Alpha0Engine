@@ -32,6 +32,8 @@ from lens_smart_money import score_smart_money
 from composite_engine import compute_1000x_score
 from lane_assignment import assign_lanes
 from shared.lanes import get_lane
+from shared.scoring import compute_axes, classify_bucket, detect_red_flags
+from shared.services.evidence_recorder import record_evidence
 from shared.services.snapshots import write_daily_snapshots
 
 from shared.logging import setup_logging, get_logger
@@ -197,6 +199,59 @@ async def score_entity(
         composite = compute_1000x_score(**raw_lens_scores)
         best_lane_id = None
 
+    # ── Sprint 9: red flags → multi-axis → bucket → evidence ────────────────
+    catalyst_proximity = lens1.get("catalyst_proximity_days")
+    volume_ratio = None
+    for s in signals:
+        if s.get("signal_type") in ("volume_awakening", "price_breakout"):
+            volume_ratio = (s.get("raw_data") or {}).get("volume_ratio") or volume_ratio
+    institutional = any(
+        s.get("signal_type") in ("institutional_accumulation", "sec_13f", "crossover_filing")
+        for s in signals
+    )
+
+    red = detect_red_flags(
+        lane_id=best_lane_id,
+        signals=signals,
+        market_cap_usd=market_cap,
+        volume_ratio=volume_ratio,
+        has_catalyst_date=catalyst_proximity is not None,
+    )
+
+    # Record evidence first so confidence can count it.
+    try:
+        evidence_count = await record_evidence(
+            session,
+            entity_id=entity.id,
+            ticker=entity.ticker,
+            lane_id=best_lane_id,
+            signals=signals,
+        )
+    except Exception as e:
+        logger.error(f"evidence recording failed for {entity.name}: {e}")
+        evidence_count = 0
+
+    axes = compute_axes(
+        composite_score=composite["composite_score"],
+        active_lenses=composite["active_lenses"],
+        market_cap_usd=market_cap,
+        cash_runway_months=cash_runway,
+        short_pct_float=lens4.get("short_pct_float"),
+        float_shares=lens4.get("float_shares"),
+        days_to_cover=lens4.get("days_to_cover"),
+        volume_ratio=volume_ratio,
+        catalyst_proximity_days=catalyst_proximity,
+        evidence_count=evidence_count,
+        institutional_confirmation=institutional,
+        red_flag_count=len(red["red_flags"]),
+        has_critical_flag=red["has_critical"],
+    )
+    bucket = classify_bucket(
+        axes,
+        has_critical_flag=red["has_critical"],
+        has_dated_catalyst=catalyst_proximity is not None,
+    )
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
     # Check for existing record
@@ -251,9 +306,22 @@ async def score_entity(
         "top_lens": composite.get("top_lens"),
         "screening_notes": composite.get("screening_notes"),
         "on_watchlist": composite["conviction_tier"] in ("CONVICTION", "HIGH"),
+        # Sprint 9: multi-axis + bucket
+        "best_lane_id": best_lane_id,
+        "opportunity_score": axes.opportunity,
+        "risk_score": axes.risk,
+        "timing_score": axes.timing,
+        "confidence_score": axes.confidence,
+        "tradability_score": axes.tradability,
+        "bucket": bucket,
         "raw_data": {
             "composite_details": composite,
             "fundamentals_used": fundamentals,
+            # Sprint 9: axes + red flags
+            "axes": axes.to_dict(),
+            "bucket": bucket,
+            "red_flags": red["red_flags"],
+            "critical_flags": red["critical_flags"],
             # Sprint 7: lane context
             "best_lane_id": best_lane_id,
             "lanes": [

@@ -12,6 +12,8 @@ from .candidate_lane import CandidateLane
 from .clinical_trial import ClinicalTrial
 from .fda_event import FDAEvent, FDA_EVENT_TYPES
 from .hyperscaler_capex import HyperscalerCapex, HYPERSCALERS
+from .evidence_item import EvidenceItem, EVIDENCE_SOURCES
+from .alert import Alert
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -28,4 +30,6 @@ __all__ = [
     "ClinicalTrial",
     "FDAEvent", "FDA_EVENT_TYPES",
     "HyperscalerCapex", "HYPERSCALERS",
+    "EvidenceItem", "EVIDENCE_SOURCES",
+    "Alert",
 ]

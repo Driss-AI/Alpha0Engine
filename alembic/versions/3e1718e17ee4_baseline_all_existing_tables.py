@@ -55,6 +55,7 @@ def upgrade() -> None:
         "data_freshness",                                            # d4f6a8b1c2e3
         "candidate_lanes",                                           # e5a7b2c9d1f4
         "clinical_trials", "fda_events", "hyperscaler_capex",        # f6b8c3d2e9a1
+        "evidence_items", "alerts",                                  # a1c4e7f9b2d6
     }
     baseline_tables = [
         tbl for name, tbl in md.tables.items() if name not in later_owned_tables
@@ -73,6 +74,17 @@ def upgrade() -> None:
         col_names = {c["name"] for c in insp.get_columns("signals")}
         if "resolution_status" in col_names:
             op.drop_column("signals", "resolution_status")
+
+    # equity_screens gained 5-axis + bucket columns in a1c4e7f9b2d6. The live
+    # model includes them so create_all adds them here — strip them so that
+    # migration can add them cleanly on a from-scratch roundtrip. Guarded.
+    if insp.has_table("equity_screens"):
+        es_cols = {c["name"] for c in insp.get_columns("equity_screens")}
+        for later_col in ("best_lane_id", "opportunity_score", "risk_score",
+                          "timing_score", "confidence_score", "tradability_score",
+                          "bucket"):
+            if later_col in es_cols:
+                op.drop_column("equity_screens", later_col)
 
 
 def downgrade() -> None:

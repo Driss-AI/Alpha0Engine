@@ -10,6 +10,8 @@ from shared.schemas.entities import Entity
 from shared.schemas.equity_screen import EquityScreen
 from shared.schemas.signals import Signal, SignalRead
 from shared.schemas.ticker_timeline import TickerTimeline, TickerTimelineRead
+from shared.schemas.candidate_lane import CandidateLane
+from shared.schemas.evidence_item import EvidenceItem
 
 router = APIRouter(tags=["Deep Dive"])
 
@@ -139,6 +141,55 @@ async def get_ticker_research_page(
     if not entity and not screen:
         raise HTTPException(404, f"No research data found for ticker {symbol}")
 
+    # ── Sprint 9.7: lane context + 5-axis scores + evidence + red flags ──────
+    lanes_ctx: List[Dict[str, Any]] = []
+    if entity:
+        lane_rows = (await session.exec(
+            select(CandidateLane).where(CandidateLane.entity_id == entity.id)
+        )).all()
+        try:
+            from shared.lanes import get_lane
+            for lr in lane_rows:
+                try:
+                    lane = get_lane(lr.lane_id)
+                    lanes_ctx.append({
+                        "lane_id": lr.lane_id,
+                        "name": lane.name,
+                        "megatrend": lane.megatrend,
+                        "lane_score": lr.lane_score,
+                        "bottleneck_exposure": lr.bottleneck_exposure,
+                    })
+                except KeyError:
+                    continue
+        except Exception:
+            pass
+
+    evidence_rows = []
+    if entity:
+        evs = (await session.exec(
+            select(EvidenceItem).where(EvidenceItem.entity_id == entity.id).limit(25)
+        )).all()
+        evidence_rows = [
+            {"source": e.source, "source_url": e.source_url, "summary": e.summary,
+             "lane_id": e.lane_id, "lens": e.lens, "captured_at": e.captured_at}
+            for e in evs
+        ]
+
+    axis_scores = None
+    red_flags = None
+    bucket = None
+    if screen:
+        axis_scores = {
+            "opportunity": screen.opportunity_score,
+            "risk": screen.risk_score,
+            "timing": screen.timing_score,
+            "confidence": screen.confidence_score,
+            "tradability": screen.tradability_score,
+        }
+        bucket = screen.bucket
+        raw = screen.raw_data or {}
+        red_flags = raw.get("red_flags", [])
+
     lens_scorecard = None
     if screen:
         lens_scorecard = {
@@ -179,6 +230,12 @@ async def get_ticker_research_page(
         "entity": entity.model_dump() if entity else None,
         "screen": screen.model_dump() if screen else None,
         "lens_scorecard": lens_scorecard,
+        # Sprint 9.7 lane-aware deep dive
+        "bucket": bucket,
+        "axis_scores": axis_scores,
+        "red_flags": red_flags,
+        "lanes": lanes_ctx,
+        "evidence": evidence_rows,
         "timeline": [item.model_dump() for item in timeline_result.all()],
         "generated_at": datetime.now(timezone.utc),
     }

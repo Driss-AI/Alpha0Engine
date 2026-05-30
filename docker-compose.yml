@@ -139,6 +139,11 @@ services:
     <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.brain}
 
+  # ----------------------------------------------------------- alert engine --
+  alert-engine:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.alerts}
+
 volumes:
   postgres_data:
   redis_data:

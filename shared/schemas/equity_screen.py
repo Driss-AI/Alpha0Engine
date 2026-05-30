@@ -74,6 +74,15 @@ class EquityScreenBase(SQLModel):
     screening_notes: Optional[str] = Field(default=None)
     on_watchlist: bool = Field(default=False)
 
+    # ── Sprint 9.4: multi-axis scores (0–100) + bucket ──────
+    best_lane_id: Optional[str] = Field(default=None, index=True)
+    opportunity_score: Optional[float] = Field(default=None)
+    risk_score: Optional[float] = Field(default=None)
+    timing_score: Optional[float] = Field(default=None)
+    confidence_score: Optional[float] = Field(default=None)
+    tradability_score: Optional[float] = Field(default=None)
+    bucket: Optional[str] = Field(default=None, index=True)  # PASS/WATCH/DEEP_DIVE/SETUP_READY/NO_TOUCH
+
     # ── Raw data for audit ──────────────────────────────────
     raw_data: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
 
