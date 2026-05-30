@@ -145,9 +145,19 @@ def compute_1000x_score(
     demand_score: float = 0.0,
     float_score: float = 0.0,
     smart_money_score: float = 0.0,
+    weights: Optional[Dict[str, float]] = None,
+    lane_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Master scoring function. Combines all five lenses.
+
+    Args:
+        weights: optional per-lane lens weights (Sprint 7.4). Falls back to the
+            global LENS_WEIGHTS when None. Each lane (shared/lanes/) defines its
+            own — e.g. biotech weights binary_catalyst 0.40, AI-infra weights
+            demand_rider + smart_money higher.
+        lane_id: optional tag recorded in the result so callers can store which
+            lane this score was computed for.
 
     Returns:
         composite_score (0.0 – 1.0)
@@ -155,6 +165,7 @@ def compute_1000x_score(
         active_lenses (0-5)
         top_lens
         screening_notes
+        lane_id
         component breakdown
     """
     scores = {
@@ -165,8 +176,10 @@ def compute_1000x_score(
         "smart_money": smart_money_score,
     }
 
+    active_weights = weights or LENS_WEIGHTS
+
     # Weighted base score
-    base = sum(scores[k] * LENS_WEIGHTS[k] for k in scores)
+    base = sum(scores[k] * active_weights.get(k, 0.0) for k in scores)
 
     # Convergence and synergy bonuses
     conv_bonus = _convergence_bonus(scores)
@@ -197,8 +210,9 @@ def compute_1000x_score(
         "active_lenses": active,
         "top_lens": top_lens,
         "screening_notes": notes,
+        "lane_id": lane_id,
         "components": scores,
-        "weights": LENS_WEIGHTS,
+        "weights": active_weights,
         "bonuses": {
             "convergence": conv_bonus,
             "synergy": syn_bonus,

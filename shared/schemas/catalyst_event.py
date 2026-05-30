@@ -14,7 +14,29 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-CATALYST_TYPES = ["earnings", "fda", "trial", "merger", "lockup", "custom"]
+# Base catalyst types (pre-Sprint-7, kept for back-compat).
+_BASE_CATALYST_TYPES = ["earnings", "fda", "trial", "merger", "lockup", "custom"]
+
+
+def _lane_catalyst_types() -> list[str]:
+    """Lane-specific catalyst types, sourced from the lane configs (Sprint 7.5).
+
+    Imported lazily so this schema module stays importable even if the lanes
+    package is unavailable (e.g. partial installs in some workers).
+    """
+    try:
+        from shared.lanes import ALL_LANES
+    except Exception:
+        return []
+    seen: dict[str, None] = {}
+    for lane in ALL_LANES:
+        for ct in lane.catalyst_types:
+            seen[ct] = None
+    return list(seen.keys())
+
+
+# Full set = base + every lane's catalyst types (deduped, order-stable).
+CATALYST_TYPES = list(dict.fromkeys(_BASE_CATALYST_TYPES + _lane_catalyst_types()))
 CATALYST_STATUSES = ["upcoming", "passed", "confirmed"]
 
 

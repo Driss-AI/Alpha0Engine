@@ -53,6 +53,7 @@ def upgrade() -> None:
         "ingestion_runs",                                            # b2c3d4e5f6a7
         "score_validations",                                         # c3d4e5f6a7b8
         "data_freshness",                                            # d4f6a8b1c2e3
+        "candidate_lanes",                                           # e5a7b2c9d1f4
     }
     baseline_tables = [
         tbl for name, tbl in md.tables.items() if name not in later_owned_tables

@@ -10,7 +10,7 @@ Risk Tiers:
   RED    (0.65 – 1.0):  High risk — avoid or deep-dive required
 """
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,100 @@ RISK_WEIGHTS = {
     "concentration": 0.15,
     "sector_crowding": 0.20,
 }
+
+# ── Lane-specific red flags (Sprint 7.6) ────────────────────────────────────
+# Shared flags apply to every candidate regardless of lane. Lane-specific flags
+# are pulled from the lane config (shared/lanes/). A flag here is "critical" —
+# its presence forces bucket = NO TOUCH in the S9 bucket classifier.
+SHARED_RED_FLAGS = (
+    "active_atm",                 # at-the-market offering — dilution into strength
+    "recent_dilutive_offering",
+    "going_concern",
+    "no_volume",                  # can't enter/exit without getting trapped
+    "no_catalyst_date",           # thesis with no dated catalyst
+    "market_cap_under_15m",       # manipulation risk
+    "insider_selling_cluster",
+)
+
+# Flags that are always critical (force NO TOUCH) wherever they appear.
+CRITICAL_RED_FLAGS = frozenset({
+    "going_concern",
+    "active_atm",
+    "recent_dilutive_offering",
+    "reverse_split",
+    "trial_failure",
+    "gpu_contract_cancellation",
+    "market_cap_under_15m",
+})
+
+
+def detect_red_flags(
+    *,
+    lane_id: Optional[str],
+    signals: Optional[List[Dict[str, Any]]] = None,
+    market_cap_usd: Optional[float] = None,
+    volume_ratio: Optional[float] = None,
+    has_catalyst_date: bool = True,
+    extra_flags: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Detect shared + lane-specific red flags for a candidate.
+
+    The lane-specific flag *vocabulary* comes from the lane config; this function
+    decides which of them (plus shared ones) actually fire based on the evidence
+    available. Detectors that need data we don't ingest yet (ATM, going concern)
+    are driven by `extra_flags` passed in by callers that DO have that data
+    (e.g. the 8-K classifier in S8), so the vocabulary is wired now and the
+    detection fills in as sources come online.
+
+    Returns:
+        {
+          "red_flags": ["going_concern", ...],
+          "critical_flags": ["going_concern"],
+          "has_critical": True,
+          "lane_flag_vocabulary": [...],   # what COULD fire for this lane
+        }
+    """
+    signals = signals or []
+    extra_flags = extra_flags or []
+    fired: set[str] = set()
+
+    # Mechanical detectors we can evaluate from data on hand.
+    if market_cap_usd is not None and market_cap_usd < 15e6:
+        fired.add("market_cap_under_15m")
+    if volume_ratio is not None and volume_ratio < 0.2:
+        fired.add("no_volume")
+    if not has_catalyst_date:
+        fired.add("no_catalyst_date")
+
+    # Signal-driven detectors (insider selling cluster from Form 4 risk signals).
+    sell_signals = sum(
+        1 for s in signals
+        if s.get("signal_type") in ("insider_sell", "insider_sell_cluster")
+    )
+    if sell_signals >= 2:
+        fired.add("insider_selling_cluster")
+
+    # Caller-supplied flags (8-K classifier, fundamentals, etc.).
+    fired.update(extra_flags)
+
+    # Build the lane vocabulary (shared + lane-specific) for transparency.
+    vocab = set(SHARED_RED_FLAGS)
+    if lane_id:
+        try:
+            from shared.lanes import get_lane
+            vocab.update(get_lane(lane_id).red_flags)
+        except Exception:
+            pass
+
+    # Only keep fired flags that are in the vocabulary OR are mechanical.
+    critical = sorted(f for f in fired if f in CRITICAL_RED_FLAGS)
+
+    return {
+        "red_flags": sorted(fired),
+        "critical_flags": critical,
+        "has_critical": bool(critical),
+        "lane_flag_vocabulary": sorted(vocab),
+    }
 
 
 def score_sector_crowding(entity_signal_count: int, sector_avg: float, sector_entity_count: int) -> float:

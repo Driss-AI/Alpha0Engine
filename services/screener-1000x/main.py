@@ -30,6 +30,8 @@ from lens_demand_rider import score_demand_rider
 from lens_float_mechanics import score_float_mechanics
 from lens_smart_money import score_smart_money
 from composite_engine import compute_1000x_score
+from lane_assignment import assign_lanes
+from shared.lanes import get_lane
 from shared.services.snapshots import write_daily_snapshots
 
 from shared.logging import setup_logging, get_logger
@@ -153,14 +155,47 @@ async def score_entity(
                  "insider_buys_form4": 0, "insider_buy_value_usd": 0,
                  "smart_money_details": {"error": str(e)}}
 
-    # ── Composite Score ─────────────────────────────────────
-    composite = compute_1000x_score(
+    # ── Lane assignment (Sprint 7.3) ────────────────────────
+    # Assign the entity to zero or more theme lanes based on its filings/signals.
+    try:
+        assigned = await assign_lanes(session, entity, signals, market_cap)
+    except Exception as e:
+        logger.error(f"Lane assignment error for {entity.name}: {e}")
+        assigned = []
+
+    raw_lens_scores = dict(
         catalyst_score=lens1["catalyst_score"],
         earnings_score=lens2["earnings_score"],
         demand_score=lens3["demand_score"],
         float_score=lens4["float_score"],
         smart_money_score=lens5["smart_money_score"],
     )
+
+    # ── Composite Score, per lane (Sprint 7.4) ──────────────
+    # Score once per matched lane using that lane's weights; the headline
+    # composite is the best-scoring lane. Falls back to global weights when the
+    # entity matches no lane (preserves pre-Sprint-7 behavior).
+    per_lane_composites: dict[str, dict] = {}
+    for cl in assigned:
+        try:
+            lane = get_lane(cl.lane_id)
+        except KeyError:
+            continue
+        per_lane_composites[cl.lane_id] = compute_1000x_score(
+            **raw_lens_scores,
+            weights=lane.scoring_weights,
+            lane_id=cl.lane_id,
+        )
+
+    if per_lane_composites:
+        best_lane_id = max(
+            per_lane_composites,
+            key=lambda lid: per_lane_composites[lid]["composite_score"],
+        )
+        composite = per_lane_composites[best_lane_id]
+    else:
+        composite = compute_1000x_score(**raw_lens_scores)
+        best_lane_id = None
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -219,6 +254,18 @@ async def score_entity(
         "raw_data": {
             "composite_details": composite,
             "fundamentals_used": fundamentals,
+            # Sprint 7: lane context
+            "best_lane_id": best_lane_id,
+            "lanes": [
+                {
+                    "lane_id": cl.lane_id,
+                    "lane_score": cl.lane_score,
+                    "bottleneck_exposure": cl.bottleneck_exposure,
+                    "composite_score": per_lane_composites.get(cl.lane_id, {}).get("composite_score"),
+                    "conviction_tier": per_lane_composites.get(cl.lane_id, {}).get("conviction_tier"),
+                }
+                for cl in assigned
+            ],
             "citation_chain": {
                 "binary_catalyst": lens1.get("cited_signal_ids", []),
                 "demand_rider": lens3.get("cited_signal_ids", []),

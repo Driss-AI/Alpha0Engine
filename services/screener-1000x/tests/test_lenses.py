@@ -405,6 +405,51 @@ class TestCompositeEngine:
         assert _count_active_lenses(scores) == 3  # 0.5, 0.4, 0.8 above 0.30
 
 
+class TestLaneAwareWeights:
+    """Sprint 7.4 — composite scoring with per-lane weights."""
+
+    def test_lane_weights_change_composite(self):
+        """Same lens scores produce different composites under different lane weights."""
+        from shared.lanes import L1_AI_INFRA, L2_BIOTECH
+
+        lens_scores = dict(
+            catalyst_score=0.80,   # strong binary catalyst
+            earnings_score=0.10,
+            demand_score=0.20,
+            float_score=0.30,
+            smart_money_score=0.20,
+        )
+        biotech = compute_1000x_score(**lens_scores, weights=L2_BIOTECH.scoring_weights, lane_id="L2_BIOTECH")
+        ai_infra = compute_1000x_score(**lens_scores, weights=L1_AI_INFRA.scoring_weights, lane_id="L1_AI_INFRA")
+
+        # Biotech weights binary_catalyst 0.40 vs AI-infra 0.15 — biotech scores higher here.
+        assert biotech["composite_score"] > ai_infra["composite_score"]
+        assert biotech["lane_id"] == "L2_BIOTECH"
+        assert ai_infra["lane_id"] == "L1_AI_INFRA"
+
+    def test_demand_heavy_company_favors_ai_infra(self):
+        """A demand+smart-money company scores higher under AI-infra weights."""
+        from shared.lanes import L1_AI_INFRA, L2_BIOTECH
+
+        lens_scores = dict(
+            catalyst_score=0.10,
+            earnings_score=0.40,
+            demand_score=0.80,       # strong structural demand
+            float_score=0.10,
+            smart_money_score=0.70,  # strong smart money
+        )
+        biotech = compute_1000x_score(**lens_scores, weights=L2_BIOTECH.scoring_weights)
+        ai_infra = compute_1000x_score(**lens_scores, weights=L1_AI_INFRA.scoring_weights)
+        assert ai_infra["composite_score"] > biotech["composite_score"]
+
+    def test_falls_back_to_global_weights(self):
+        """No weights arg → uses global LENS_WEIGHTS (pre-Sprint-7 behavior)."""
+        from composite_engine import LENS_WEIGHTS
+        result = compute_1000x_score(catalyst_score=0.5, weights=None)
+        assert result["weights"] == LENS_WEIGHTS
+        assert result["lane_id"] is None
+
+
 # ═══════════════════════════════════════════════════════════
 # Run
 # ═══════════════════════════════════════════════════════════

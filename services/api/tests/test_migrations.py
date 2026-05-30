@@ -55,11 +55,11 @@ def test_no_orphan_revisions():
 
 
 def test_head_matches_expected():
-    """Current head should be the Sprint 6.4 migration."""
+    """Current head should be the Sprint 7.2 migration."""
     cfg = _get_alembic_config()
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
-    assert "d4f6a8b1c2e3" in heads, f"Expected head d4f6a8b1c2e3 (S6.4 data_freshness), got {heads}"
+    assert "e5a7b2c9d1f4" in heads, f"Expected head e5a7b2c9d1f4 (S7.2 candidate_lanes), got {heads}"
 
 
 def test_all_revisions_have_upgrade_and_downgrade():
