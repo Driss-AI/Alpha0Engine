@@ -37,6 +37,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.signals import Signal
+from shared.schemas.clinical_trial import ClinicalTrial
+from shared.services.catalyst_emitter import upsert_catalyst
 
 from ct_client import search_trials, search_by_sponsor
 from trial_matcher import match_sponsor_indexed, build_entity_index
@@ -165,6 +167,81 @@ async def check_existing_signal(
     return result.first() is not None
 
 
+def _trial_catalyst_type(trial: Dict[str, Any], proximity_days: Optional[int]) -> Optional[str]:
+    """Map a trial to a lane catalyst type (Sprint 8.1).
+
+    - phase_advance: Phase 2/3 trial that is active/recruiting (pipeline progress)
+    - trial_readout: primary completion within 180d (imminent data)
+    Returns None when neither applies (too far out / wrong phase).
+    """
+    phase = (trial.get("phase") or "").upper()
+    if proximity_days is not None and proximity_days >= 0 and proximity_days <= 180:
+        return "trial_readout"
+    if "PHASE3" in phase or "PHASE2" in phase:
+        return "phase_advance"
+    return None
+
+
+async def _persist_clinical_trial(
+    session: AsyncSession,
+    *,
+    trial: Dict[str, Any],
+    entity_id: str,
+    ticker: Optional[str],
+    company: Optional[str],
+    proximity_days: Optional[int],
+) -> None:
+    """Upsert a clinical_trials row and emit a lane catalyst when relevant."""
+    nct_id = trial["nct_id"]
+    conditions = trial.get("conditions") or []
+    interventions = trial.get("interventions") or []
+
+    existing = (await session.exec(
+        select(ClinicalTrial).where(
+            ClinicalTrial.nct_id == nct_id,
+            ClinicalTrial.entity_id == entity_id,
+        )
+    )).first()
+
+    fields = dict(
+        nct_id=nct_id,
+        entity_id=entity_id,
+        ticker=ticker,
+        company=company,
+        phase=trial.get("phase"),
+        status=trial.get("status"),
+        condition=", ".join(conditions[:3]) if conditions else None,
+        intervention=", ".join(interventions[:3]) if interventions else None,
+        primary_completion_date=trial.get("primary_completion_dt"),
+        study_completion_date=trial.get("completion_dt"),
+        catalyst_proximity_days=proximity_days,
+        source_url=f"https://clinicaltrials.gov/study/{nct_id}",
+        raw={k: trial.get(k) for k in ("title", "phase", "status", "lead_sponsor", "enrollment")},
+    )
+
+    if existing:
+        for k, v in fields.items():
+            setattr(existing, k, v)
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+    else:
+        session.add(ClinicalTrial(**fields))
+
+    # Emit lane catalyst
+    ct_type = _trial_catalyst_type(trial, proximity_days)
+    if ct_type and ticker:
+        await upsert_catalyst(
+            session,
+            ticker=ticker,
+            catalyst_type=ct_type,
+            title=f"{trial.get('phase', 'Trial')} — {(trial.get('title') or '')[:120]}",
+            expected_date=trial.get("primary_completion_dt"),
+            entity_id=entity_id,
+            impact_score=_compute_signal_value(trial, proximity_days),
+            details={"nct_id": nct_id, "lane": "L2_BIOTECH", "bottleneck": "clinical_trial"},
+        )
+
+
 async def run_trial_ingestion():
     """Main daily clinical trial ingestion."""
     logger.info("=" * 60)
@@ -260,6 +337,19 @@ async def run_trial_ingestion():
             proximity_days = _compute_catalyst_proximity(trial)
             signal_value = _compute_signal_value(trial, proximity_days)
             catalyst_type = _classify_catalyst_type(trial)
+
+            # Sprint 8.1: persist a clinical_trials row + emit lane catalyst
+            try:
+                await _persist_clinical_trial(
+                    session,
+                    trial=trial,
+                    entity_id=entity_id,
+                    ticker=matched.get("ticker"),
+                    company=matched.get("name"),
+                    proximity_days=proximity_days,
+                )
+            except Exception as e:
+                logger.error(f"clinical_trials persist failed for {nct_id}: {e}")
 
             raw_data = {
                 "nct_id": nct_id,

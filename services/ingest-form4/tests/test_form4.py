@@ -235,3 +235,48 @@ class TestSignalValue:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── Sprint 8.6: code-first classification ───────────────────────────────────
+from form4_parser import classify_transaction, detect_10b5_1
+
+
+class TestTransactionClassification:
+    def test_open_market_purchase(self):
+        c = classify_transaction("P", "A")
+        assert c["type"] == "Purchase"
+        assert c["is_open_market_purchase"] is True
+        assert c["signal_weight"] == 1.0
+
+    def test_grant_is_not_purchase(self):
+        # The old bug: a grant (code A, acquired=A) was mislabeled "Purchase".
+        c = classify_transaction("A", "A")
+        assert c["type"] == "Grant"
+        assert c["is_open_market_purchase"] is False
+        assert c["signal_weight"] == 0.0
+
+    def test_option_exercise_weak(self):
+        c = classify_transaction("M", "A")
+        assert c["is_open_market_purchase"] is False
+        assert c["signal_weight"] == 0.3
+
+    def test_open_market_sale(self):
+        c = classify_transaction("S", "D")
+        assert c["type"] == "Sale"
+        assert c["is_sale"] is True
+        assert c["signal_weight"] == -1.0
+
+    def test_tax_withholding_neutral(self):
+        c = classify_transaction("F", "D")
+        assert c["is_open_market_purchase"] is False
+        assert c["is_sale"] is False
+        assert c["signal_weight"] == 0.0
+
+
+class TestDetect10b51:
+    def test_detects_rule_reference(self):
+        assert detect_10b5_1("This sale was made pursuant to a Rule 10b5-1 trading plan.") is True
+        assert detect_10b5_1("<footnote>10b5-1 plan adopted 2025-01-01</footnote>") is True
+
+    def test_no_false_positive(self):
+        assert detect_10b5_1("Regular open market purchase, no plan.") is False

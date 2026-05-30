@@ -48,6 +48,56 @@ CATALYST_PATTERNS = {
         r"public\s+offering", r"private\s+placement",
         r"shelf\s+registration", r"at.the.market",
     ],
+    # ── Sprint 8.3: AI Infrastructure (L1) categories ────────────────────────
+    "hyperscaler_contract": [
+        r"hyperscaler", r"(microsoft|amazon|aws|google|meta|oracle)\s+",
+        r"cloud\s+services\s+agreement", r"gpu\s+hosting", r"colocation\s+agreement",
+        r"capacity\s+agreement",
+    ],
+    "ppa_signed": [
+        r"power\s+purchase\s+agreement", r"\bppa\b", r"behind.the.meter",
+        r"power\s+supply\s+agreement", r"energy\s+services\s+agreement",
+        r"\d+\s*(mw|megawatt|gw|gigawatt)",
+    ],
+    "data_center_lease": [
+        r"data\s+center\s+lease", r"build.to.suit", r"colocation",
+        r"critical\s+it\s+load", r"data\s+center\s+capacity",
+    ],
+    "gpu_order": [
+        r"gpu\s+(order|purchase|procurement)", r"(h100|h200|gb200|blackwell)",
+        r"accelerated\s+computing", r"nvidia\s+(gpu|chips|order)",
+    ],
+    # ── Sprint 8.3: bearish / risk categories ────────────────────────────────
+    "going_concern": [
+        r"going\s+concern", r"substantial\s+doubt", r"ability\s+to\s+continue",
+    ],
+    "reverse_split": [
+        r"reverse\s+(stock\s+)?split", r"share\s+consolidation",
+    ],
+    "delisting": [
+        r"delisting", r"notice\s+of\s+noncompliance", r"minimum\s+bid\s+price",
+        r"nasdaq\s+notification",
+    ],
+}
+
+# Map 8-K catalyst categories to lane + lane catalyst_type (Sprint 8.3).
+# Categories not listed here are lane-agnostic.
+CATEGORY_LANE_MAP = {
+    "hyperscaler_contract": ("L1_AI_INFRA", "hyperscaler_contract", "data_center"),
+    "ppa_signed":           ("L1_AI_INFRA", "ppa_signed", "power"),
+    "data_center_lease":    ("L1_AI_INFRA", "data_center_lease", "data_center"),
+    "gpu_order":            ("L1_AI_INFRA", "gpu_order", "gpu_cloud"),
+    "contract_award":       ("L1_AI_INFRA", "gov_contract", "power"),
+    "fda_approval":         ("L2_BIOTECH", "fda_approval", "fda_decision"),
+    "clinical_trial_data":  ("L2_BIOTECH", "trial_readout", "clinical_trial"),
+}
+
+# 8-K categories that map to risk red flags (Sprint 8.3 → feeds S7.6 detect_red_flags).
+CATEGORY_RED_FLAGS = {
+    "offering": "recent_dilutive_offering",
+    "going_concern": "going_concern",
+    "reverse_split": "reverse_split",
+    "delisting": "nasdaq_delisting_notice",
 }
 
 # 8-K item number → category
@@ -123,9 +173,17 @@ def compute_signal_value(
         "fda_approval": 0.90,
         "clinical_trial_data": 0.80,
         "merger_acquisition": 0.75,
+        # AI-infra contracts are high-signal demand confirmation
+        "hyperscaler_contract": 0.85,
+        "ppa_signed": 0.75,
+        "data_center_lease": 0.70,
+        "gpu_order": 0.80,
         "contract_award": 0.65,
         "partnership": 0.55,
-        "offering": 0.25,  # Dilutive — bearish
+        "offering": 0.25,        # Dilutive — bearish
+        "going_concern": 0.10,   # Bearish red flag
+        "reverse_split": 0.10,
+        "delisting": 0.10,
     }
     base = base_scores.get(cat_type, 0.40)
 
@@ -156,3 +214,36 @@ def is_catalyst_filing(items: List[str], catalyst: Dict[str, Any]) -> bool:
     has_significant_item = bool(set(items) & significant_items)
 
     return has_significant_item or catalyst.get("catalyst_type") is not None
+
+
+def lane_for_catalyst(catalyst_type: str | None) -> Dict[str, Any]:
+    """Map a classified catalyst category to (lane_id, lane_catalyst_type, bottleneck).
+
+    Returns {} for lane-agnostic categories (Sprint 8.3).
+    """
+    if not catalyst_type:
+        return {}
+    mapped = CATEGORY_LANE_MAP.get(catalyst_type)
+    if not mapped:
+        return {}
+    lane_id, lane_catalyst_type, bottleneck = mapped
+    return {"lane_id": lane_id, "catalyst_type": lane_catalyst_type, "bottleneck": bottleneck}
+
+
+def red_flags_from_classification(catalyst: Dict[str, Any]) -> List[str]:
+    """Extract red flags from ALL matched categories in a classification (Sprint 8.3).
+
+    These feed risk_engine.detect_red_flags(extra_flags=...) — e.g. an 8-K that
+    matches both 'offering' and 'going_concern' returns both flags.
+    """
+    all_matches = catalyst.get("all_matches", {})
+    flags = []
+    for category in all_matches:
+        flag = CATEGORY_RED_FLAGS.get(category)
+        if flag:
+            flags.append(flag)
+    # Also include the headline category if it's a red-flag type.
+    head = catalyst.get("catalyst_type")
+    if head in CATEGORY_RED_FLAGS and CATEGORY_RED_FLAGS[head] not in flags:
+        flags.append(CATEGORY_RED_FLAGS[head])
+    return flags

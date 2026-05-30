@@ -31,8 +31,10 @@ from shared.schemas.entities import Entity
 from shared.schemas.daily_prices import DailyPrice
 from shared.schemas.fundamentals import FundamentalScore
 from shared.schemas.equity_screen import EquityScreen
+from shared.schemas.signals import Signal
 
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
+from volume_signals import detect_volume_signals
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -211,6 +213,7 @@ async def run_price_ingestion():
         total_stored = 0
         propagated = 0
         errors = 0
+        volume_signals_emitted = 0
 
         for ticker, records in price_data.items():
             entity = ticker_map.get(ticker)
@@ -223,6 +226,33 @@ async def run_price_ingestion():
                     session, ticker, entity.id, records, mcap_info,
                 )
                 total_stored += stored
+
+                # ── Sprint 8.8: volume awakening / breakout detection ──
+                if records:
+                    latest = records[-1]
+                    for vs in detect_volume_signals(latest):
+                        sig_date = latest.get("trade_date") or datetime.utcnow()
+                        src_id = f"{ticker}:{vs['signal_type']}:{sig_date}"
+                        exists = (await session.exec(
+                            select(Signal).where(
+                                Signal.source_id == src_id,
+                                Signal.signal_type == vs["signal_type"],
+                            )
+                        )).first()
+                        if exists:
+                            continue
+                        session.add(Signal(
+                            entity_id=entity.id,
+                            signal_type=vs["signal_type"],
+                            signal_date=sig_date if isinstance(sig_date, datetime)
+                                        else datetime.utcnow(),
+                            value=vs["value"],
+                            raw_data={**vs["detail"], "ticker": ticker, "source": "prices"},
+                            source="ingest_prices",
+                            source_id=src_id,
+                            notes=f"{vs['signal_type']} on {ticker}: {vs['detail']}",
+                        ))
+                        volume_signals_emitted += 1
 
                 # Propagate market cap + short interest to scoring tables
                 mcap = mcap_info.get("market_cap")
@@ -255,6 +285,7 @@ async def run_price_ingestion():
         logger.info(f"  Tickers fetched: {len(price_data)}")
         logger.info(f"  Price rows stored: {total_stored}")
         logger.info(f"  Market caps propagated: {propagated}")
+        logger.info(f"  Volume/breakout signals: {volume_signals_emitted}")
         logger.info(f"  Errors: {errors}")
         logger.info("=" * 60)
 

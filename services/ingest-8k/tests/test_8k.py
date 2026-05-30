@@ -105,3 +105,53 @@ class TestCatalystFiltering:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── Sprint 8.3: lane-aware classification ───────────────────────────────────
+from filing_classifier import lane_for_catalyst, red_flags_from_classification
+
+
+class TestLaneAwareClassification:
+    def test_classifies_ppa_as_ai_infra(self):
+        text = ("Item 1.01 Entry into a Material Definitive Agreement. The Company "
+                "entered into a 200 megawatt power purchase agreement (PPA) with a "
+                "hyperscale data center operator.")
+        cat = classify_catalyst(text)
+        assert cat["catalyst_type"] in ("ppa_signed", "hyperscaler_contract", "data_center_lease")
+        lane = lane_for_catalyst(cat["catalyst_type"])
+        assert lane["lane_id"] == "L1_AI_INFRA"
+        assert "bottleneck" in lane
+
+    def test_classifies_gpu_order_as_ai_infra(self):
+        text = "The Company placed an order for NVIDIA H100 GPUs for accelerated computing."
+        cat = classify_catalyst(text)
+        assert cat["catalyst_type"] == "gpu_order"
+        assert lane_for_catalyst("gpu_order")["lane_id"] == "L1_AI_INFRA"
+
+    def test_classifies_fda_as_biotech(self):
+        text = "The FDA approved the Company's new drug application (NDA approval)."
+        cat = classify_catalyst(text)
+        assert cat["catalyst_type"] == "fda_approval"
+        assert lane_for_catalyst("fda_approval")["lane_id"] == "L2_BIOTECH"
+
+    def test_lane_agnostic_returns_empty(self):
+        assert lane_for_catalyst("merger_acquisition") == {}
+        assert lane_for_catalyst(None) == {}
+
+    def test_going_concern_red_flag(self):
+        text = ("Item 8.01. The Company's financial statements include a going concern "
+                "qualification; substantial doubt about its ability to continue.")
+        cat = classify_catalyst(text)
+        flags = red_flags_from_classification(cat)
+        assert "going_concern" in flags
+
+    def test_offering_red_flag(self):
+        text = "Item 1.01 The Company entered into an at-the-market offering and shelf registration."
+        cat = classify_catalyst(text)
+        flags = red_flags_from_classification(cat)
+        assert "recent_dilutive_offering" in flags
+
+    def test_clean_contract_no_red_flags(self):
+        text = "Item 1.01 The Company signed a strategic partnership and licensing agreement."
+        cat = classify_catalyst(text)
+        assert red_flags_from_classification(cat) == []

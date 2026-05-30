@@ -9,6 +9,9 @@ from .daily_prices import DailyPrice, DailyPriceCreate, DailyPriceRead, PriceSna
 from .pipeline_health import PipelineHealth, PipelineHealthRead
 from .data_freshness import DataFreshness
 from .candidate_lane import CandidateLane
+from .clinical_trial import ClinicalTrial
+from .fda_event import FDAEvent, FDA_EVENT_TYPES
+from .hyperscaler_capex import HyperscalerCapex, HYPERSCALERS
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -22,4 +25,7 @@ __all__ = [
     "PipelineHealth", "PipelineHealthRead",
     "DataFreshness",
     "CandidateLane",
+    "ClinicalTrial",
+    "FDAEvent", "FDA_EVENT_TYPES",
+    "HyperscalerCapex", "HYPERSCALERS",
 ]

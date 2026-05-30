@@ -149,7 +149,7 @@ def _compute_signal_value(parsed: Dict[str, Any]) -> float:
     Cluster buys by officers = strongest signal.
     """
     if parsed["buy_count"] > 0 and parsed["sell_count"] == 0:
-        # Pure buy — bullish
+        # Pure OPEN-MARKET buy — the strongest insider signal
         base = 0.6
         if parsed["total_buy_value"] > 100_000:
             base = 0.75
@@ -162,14 +162,29 @@ def _compute_signal_value(parsed: Dict[str, Any]) -> float:
             base = min(base + 0.05, 0.95)
         return base
     elif parsed["sell_count"] > 0 and parsed["buy_count"] == 0:
-        # Pure sell — mildly bearish (insiders sell for many reasons)
-        return 0.25
+        # Pure sell — mildly bearish. 10b5-1 plan sales are pre-scheduled,
+        # so they carry even less signal (Sprint 8.6).
+        return 0.35 if parsed.get("is_10b5_1") else 0.25
     elif parsed["buy_count"] > 0 and parsed["sell_count"] > 0:
         # Mixed — look at net
         if parsed["net_value"] > 0:
             return 0.55  # Net buyer
         return 0.35  # Net seller
-    return 0.3  # Grants, exercises only
+    return 0.3  # Grants, exercises only — NOT a buy signal
+
+
+def _insider_signal_type(parsed: Dict[str, Any]) -> str:
+    """Map a parsed Form 4 to a signal_type (Sprint 8.6).
+
+    insider_buy_cluster   — open-market purchase(s), no sales (bullish)
+    insider_sell_cluster  — open-market sale(s), no buys (risk; feeds red flags)
+    form_4_insider        — mixed / grants / exercises (neutral, lens reads it)
+    """
+    if parsed["buy_count"] > 0 and parsed["sell_count"] == 0:
+        return "insider_buy_cluster"
+    if parsed["sell_count"] > 0 and parsed["buy_count"] == 0:
+        return "insider_sell_cluster"
+    return "form_4_insider"
 
 
 async def run_form4_ingestion():
@@ -273,7 +288,7 @@ async def run_form4_ingestion():
 
                             signal = Signal(
                                 entity_id=entity.id,
-                                signal_type="form_4_insider",
+                                signal_type=_insider_signal_type(parsed),
                                 signal_date=sig_date,
                                 value=signal_value,
                                 raw_data={
@@ -281,6 +296,8 @@ async def run_form4_ingestion():
                                     "insider_title": parsed["insider_title"],
                                     "insider_relationship": parsed["insider_relationship"],
                                     "transaction_type": "Purchase" if parsed["buy_count"] > 0 else "Sale",
+                                    "is_open_market_purchase": parsed.get("has_open_market_buy", False),
+                                    "is_10b5_1": parsed.get("is_10b5_1", False),
                                     "shares": parsed["net_shares"],
                                     "shares_held": parsed["transactions"][-1].get("shares_after", 0) if parsed["transactions"] else 0,
                                     "value_usd": parsed["total_buy_value"] or parsed["total_sell_value"],

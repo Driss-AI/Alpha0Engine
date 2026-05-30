@@ -29,6 +29,8 @@ from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.company_news import CompanyNews
 
+from lane_tagger import tag_news_lanes
+
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(name)s | %(message)s",
@@ -175,6 +177,11 @@ async def ingest_news_batch(
                 sentiment, sentiment_score = _classify_sentiment(title, summary)
                 categories = _classify_categories(title, summary)
 
+                # Sprint 8.5: lane tagging (lane + bottleneck + high-signal phrases)
+                lane_tags = tag_news_lanes(title, summary)
+                for t in lane_tags:
+                    categories.append(f"lane:{t['lane_id']}")
+
                 pub_ts = article.get("datetime")
                 published_at = (
                     datetime.fromtimestamp(pub_ts, tz=timezone.utc).replace(tzinfo=None)
@@ -200,6 +207,8 @@ async def ingest_news_batch(
                             "finnhub_id": article.get("id"),
                             "image": article.get("image"),
                             "related": article.get("related"),
+                            "lane_tags": lane_tags,
+                            "news_catalyst": any(t["high_signal"] for t in lane_tags),
                         },
                     )
                     session.add(news)

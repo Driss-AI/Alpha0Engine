@@ -84,6 +84,10 @@ services:
     <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.trials}
 
+  ingest-fda:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.fda}
+
   ingest-8k:
     <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.8k}
@@ -103,6 +107,10 @@ services:
   ingest-prices:
     <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.prices}
+
+  ingest-hyperscaler-capex:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.capex}
 
   # -------------------------------------------------------- resolution / nlp --
   entity-resolver:

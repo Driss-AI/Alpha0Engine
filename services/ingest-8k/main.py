@@ -32,7 +32,11 @@ from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.signals import Signal
 
-from filing_classifier import extract_items, classify_catalyst, compute_signal_value, is_catalyst_filing
+from filing_classifier import (
+    extract_items, classify_catalyst, compute_signal_value, is_catalyst_filing,
+    lane_for_catalyst, red_flags_from_classification,
+)
+from shared.services.catalyst_emitter import upsert_catalyst
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -256,6 +260,43 @@ async def run_8k_ingestion():
                     )
                     session.add(signal)
                     signals_created += 1
+
+                    # Sprint 8.3: emit a lane catalyst + capture red flags
+                    lane = lane_for_catalyst(cat_type)
+                    red_flags = red_flags_from_classification(catalyst)
+                    if lane and entity.ticker:
+                        try:
+                            await upsert_catalyst(
+                                session,
+                                ticker=entity.ticker,
+                                catalyst_type=lane["catalyst_type"],
+                                title=notes[:120],
+                                expected_date=sig_date.date(),
+                                entity_id=entity.id,
+                                status="passed",
+                                impact_score=signal_value,
+                                details={
+                                    "lane": lane["lane_id"],
+                                    "bottleneck": lane["bottleneck"],
+                                    "source": "8k",
+                                    "accession": filing["accession"],
+                                },
+                            )
+                        except Exception as e:
+                            logger.error(f"8-K catalyst emit failed: {e}")
+                    if red_flags:
+                        # Persist red flags as a typed signal so risk-filter can pick them up.
+                        session.add(Signal(
+                            entity_id=entity.id,
+                            signal_type="red_flag",
+                            signal_date=sig_date,
+                            value=0.0,
+                            raw_data={"red_flags": red_flags, "source": "8k",
+                                      "accession": filing["accession"]},
+                            source="edgar_8k",
+                            source_id=f"{source_id}:redflag",
+                            notes=f"8-K red flags: {', '.join(red_flags)}"[:500],
+                        ))
 
                     # Log high-value catalysts
                     if signal_value >= 0.6:
