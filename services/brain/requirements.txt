@@ -5,3 +5,4 @@ python-dotenv>=1.0
 anthropic>=0.40
 httpx>=0.27
 schedule>=1.2
+redis[asyncio]>=5.0  # required: shared.clients imports redis_client at load time
