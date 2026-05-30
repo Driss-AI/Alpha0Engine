@@ -16,7 +16,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 load_dotenv()
 
-from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, LOG_LEVEL, API_SECRET_KEY
+from shared.config import ALLOWED_ORIGINS, AUTO_CREATE_TABLES, LOG_LEVEL, API_SECRET_KEY, VIEWER_API_KEY, IS_DEV
 from shared.logging import setup_logging, get_logger
 
 setup_logging("alpha0-api", level=LOG_LEVEL)
@@ -43,6 +43,7 @@ from routers import (
     catalysts,
     brain,
     metrics,
+    data_freshness,
 )
 
 
@@ -105,10 +106,28 @@ SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
 # ── Public routes (no auth: dashboard HTML + health) ──
 
 def _inject_api_key(html: str) -> str:
-    """Inject the API key into dashboard HTML so JS can authenticate."""
+    """Inject the read-only viewer key into dashboard HTML so JS can authenticate GETs.
+
+    SECURITY: Never inject `API_SECRET_KEY` (admin) — it would let any visitor write.
+    If `VIEWER_API_KEY` is not set:
+      - dev mode: fall back to the admin key (no harm — there's no admin key in dev anyway)
+      - prod: inject empty string; dashboard reads will 401 until VIEWER_API_KEY is set
+        (intentional — surfaces the misconfiguration rather than re-introducing the leak).
+    """
+    if VIEWER_API_KEY:
+        key_to_inject = VIEWER_API_KEY
+    elif IS_DEV and not API_SECRET_KEY:
+        # Dev with no auth at all — bypass mode. Use a marker string for clarity.
+        key_to_inject = "dev-bypass"
+    else:
+        logger.warning(
+            "VIEWER_API_KEY not set in non-dev environment — dashboard reads will fail. "
+            "Set VIEWER_API_KEY env var (different from API_SECRET_KEY) to fix."
+        )
+        key_to_inject = ""
     return html.replace(
         "if(typeof API_KEY==='undefined')var API_KEY='';",
-        f"var API_KEY='{API_SECRET_KEY}';",
+        f"var API_KEY='{key_to_inject}';",
     )
 
 
@@ -147,4 +166,5 @@ app.include_router(prices.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(pipeline_health.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(watchlist.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(catalysts.router, prefix="/api/v1", dependencies=_viewer)
+app.include_router(data_freshness.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(brain.router, prefix="/api/v1", dependencies=_viewer)

@@ -71,3 +71,55 @@ class RunTracker:
             )
         except Exception as e:
             log.error(f"[{self.service_name}] Failed to persist run record: {e}")
+
+        # Sprint 6.4 — upsert data_freshness in a separate transaction so failures
+        # here can't blow away the ingestion_runs commit above.
+        try:
+            await _upsert_freshness(
+                source=self.service_name,
+                run_status=self.run.status,
+                records_added=self.run.records_processed,
+                completed_at=self.run.completed_at,
+            )
+        except Exception as e:
+            log.warning(f"[{self.service_name}] Failed to upsert data_freshness: {e}")
+
+
+async def _upsert_freshness(
+    *,
+    source: str,
+    run_status: str,
+    records_added: int,
+    completed_at: datetime,
+) -> None:
+    """Upsert one `data_freshness` row reflecting the just-finished run.
+
+    Status mapping:
+        success / partial → fresh, consecutive_failures reset to 0
+        error             → failing, consecutive_failures += 1
+    """
+    from sqlalchemy import select
+    from shared.schemas.data_freshness import DataFreshness
+
+    is_success = run_status in ("success", "partial")
+    async with AsyncSessionLocal() as session:
+        existing = (await session.execute(
+            select(DataFreshness).where(DataFreshness.source == source)
+        )).scalar_one_or_none()
+
+        if existing is None:
+            existing = DataFreshness(source=source)
+            session.add(existing)
+
+        existing.last_attempt = completed_at
+        existing.records_added_last_run = records_added
+        existing.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        if is_success:
+            existing.last_successful_run = completed_at
+            existing.consecutive_failures = 0
+            existing.status = "fresh"
+        else:
+            existing.consecutive_failures = (existing.consecutive_failures or 0) + 1
+            existing.status = "failing"
+
+        await session.commit()

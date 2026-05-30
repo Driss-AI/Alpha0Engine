@@ -80,7 +80,8 @@ def main():
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
         log.info("RUN_MODE=once — running single check then exiting")
-        run_daily_check()
+        from shared.worker_runner import run_once_with_tracking_sync
+        run_once_with_tracking_sync("ingest-13f", run_daily_check)
         log.info("13F check complete. Exiting.")
         return
 

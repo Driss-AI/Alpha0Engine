@@ -391,7 +391,8 @@ async def run_loop():
 if __name__ == "__main__":
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
-        asyncio.run(run_price_ingestion())
+        from shared.worker_runner import run_once_with_tracking
+        asyncio.run(run_once_with_tracking("ingest-prices", run_price_ingestion))
     elif mode == "discover":
         asyncio.run(run_universe_discovery())
     else:

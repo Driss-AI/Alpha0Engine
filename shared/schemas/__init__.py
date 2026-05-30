@@ -7,6 +7,7 @@ from .risk import RiskAssessment, RiskAssessmentCreate, RiskAssessmentRead
 from .equity_screen import EquityScreen, EquityScreenCreate, EquityScreenRead
 from .daily_prices import DailyPrice, DailyPriceCreate, DailyPriceRead, PriceSnapshot
 from .pipeline_health import PipelineHealth, PipelineHealthRead
+from .data_freshness import DataFreshness
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -18,4 +19,5 @@ __all__ = [
     "EquityScreen", "EquityScreenCreate", "EquityScreenRead",
     "DailyPrice", "DailyPriceCreate", "DailyPriceRead", "PriceSnapshot",
     "PipelineHealth", "PipelineHealthRead",
+    "DataFreshness",
 ]

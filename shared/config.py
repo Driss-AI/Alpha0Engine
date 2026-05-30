@@ -11,7 +11,8 @@ IS_PROD = ENV == "production"
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "DEBUG" if IS_DEV else "INFO")
 
-API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")
+API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "")  # admin / write key
+VIEWER_API_KEY = os.environ.get("VIEWER_API_KEY", "")  # read-only key (safe to embed in public HTML)
 
 ALLOWED_ORIGINS = [
     o.strip()

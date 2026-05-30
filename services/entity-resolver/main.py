@@ -153,7 +153,8 @@ def main():
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
         log.info("RUN_MODE=once — draining stream + batch resolve then exiting")
-        asyncio.get_event_loop().run_until_complete(drain_and_resolve())
+        from shared.worker_runner import run_once_with_tracking
+        asyncio.get_event_loop().run_until_complete(run_once_with_tracking("entity-resolver", drain_and_resolve))
         log.info("Entity resolver complete. Exiting.")
         return
 

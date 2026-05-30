@@ -1,5 +1,33 @@
 version: "3.9"
+
+# ----------------------------------------------------------------------------
+# Alpha0Engine — Local development compose
+# ----------------------------------------------------------------------------
+# All 16 services + postgres + redis. Workers default to RUN_MODE=loop so they
+# keep ticking when you `docker compose up`. On Railway, each service is run
+# via cron with RUN_MODE=once (configured in the Railway dashboard, not here).
+#
+# Sprint 6.1 — wires the 11 services that previously existed in /services/
+# but weren't in this file: ingest-trials, ingest-8k, ingest-form4,
+# ingest-13f, ingest-news, ingest-prices, fundamental-screener, risk-filter,
+# screener-1000x, brain, nlp-engine.
+# ----------------------------------------------------------------------------
+
+x-worker-defaults: &worker-defaults
+  env_file: .env
+  environment: &worker-env
+    DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
+    REDIS_URL: redis://redis:6379/0
+    LOG_LEVEL: INFO
+    RUN_MODE: loop
+    ENVIRONMENT: development
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  restart: unless-stopped
+
 services:
+  # ------------------------------------------------------------------ infra --
   postgres:
     image: pgvector/pgvector:pg16
     environment:
@@ -24,6 +52,7 @@ services:
       timeout: 5s
       retries: 5
 
+  # -------------------------------------------------------------------- api --
   api:
     build: {context: ., dockerfile: Dockerfile.api}
     ports: ["8000:8000"]
@@ -36,45 +65,71 @@ services:
       postgres: {condition: service_healthy}
       redis: {condition: service_healthy}
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
 
+  # ---------------------------------------------------------- ingest workers --
   ingest-edgar:
+    <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.edgar}
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
 
   ingest-patents:
+    <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.patents}
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres: {condition: service_healthy}
 
   ingest-github:
+    <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.github}
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
 
+  ingest-trials:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.trials}
+
+  ingest-8k:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.8k}
+
+  ingest-form4:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.form4}
+
+  ingest-13f:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.13f}
+
+  ingest-news:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.news}
+
+  ingest-prices:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.prices}
+
+  # -------------------------------------------------------- resolution / nlp --
   entity-resolver:
+    <<: *worker-defaults
     build: {context: ., dockerfile: Dockerfile.resolver}
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql://postgres:password@postgres:5432/alpha_engine
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      postgres: {condition: service_healthy}
-      redis: {condition: service_healthy}
+
+  nlp-engine:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.nlp}
+
+  # ------------------------------------------------ screening / scoring tier --
+  fundamental-screener:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.screener}
+
+  risk-filter:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.riskfilter}
+
+  screener-1000x:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.screener-1000x}
+
+  # ------------------------------------------------------------------ brain --
+  brain:
+    <<: *worker-defaults
+    build: {context: ., dockerfile: Dockerfile.brain}
 
 volumes:
   postgres_data:

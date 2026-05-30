@@ -42,7 +42,8 @@ def main():
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
         log.info("RUN_MODE=once — running single ingest then exiting")
-        run_hourly_ingest()
+        from shared.worker_runner import run_once_with_tracking_sync
+        run_once_with_tracking_sync("ingest-github", run_hourly_ingest)
         log.info("GitHub Archive ingest complete. Exiting.")
         return
 

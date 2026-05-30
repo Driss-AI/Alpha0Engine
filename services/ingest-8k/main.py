@@ -303,6 +303,7 @@ async def run_loop():
 if __name__ == "__main__":
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
-        asyncio.run(run_8k_ingestion())
+        from shared.worker_runner import run_once_with_tracking
+        asyncio.run(run_once_with_tracking("ingest-8k", run_8k_ingestion))
     else:
         asyncio.run(run_loop())

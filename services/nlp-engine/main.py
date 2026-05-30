@@ -127,7 +127,8 @@ def main():
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
         log.info("RUN_MODE=once — running single cycle then exiting")
-        asyncio.get_event_loop().run_until_complete(run_nlp_cycle())
+        from shared.worker_runner import run_once_with_tracking
+        asyncio.get_event_loop().run_until_complete(run_once_with_tracking("nlp-engine", run_nlp_cycle))
         log.info("NLP Engine single run complete. Exiting.")
         return
 

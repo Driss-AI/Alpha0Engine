@@ -98,3 +98,91 @@ async def test_dev_mode_bypasses_auth(client: AsyncClient):
     ):
         resp = await client.get("/api/v1/entities")
         assert resp.status_code == 200
+
+
+# ── Sprint 6.2: viewer key separation ──────────────────────────────────────
+# Two distinct keys: admin (writes) and viewer (read-only, safe to embed in HTML).
+
+VIEWER_KEY = "test-viewer-key-67890"
+
+
+@pytest.fixture
+def auth_patches_with_viewer():
+    """Enforce key validation with BOTH admin and viewer keys configured."""
+    with (
+        patch("middleware.auth.IS_DEV", False),
+        patch("middleware.auth.API_SECRET_KEY", API_KEY),
+        patch("middleware.auth.VIEWER_API_KEY", VIEWER_KEY),
+    ):
+        yield
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path", VIEWER_ENDPOINTS)
+async def test_viewer_key_accepted_on_reads(
+    client: AsyncClient, auth_patches_with_viewer, method, path
+):
+    """Viewer key grants read access (200, or 422 on missing-param edge cases)."""
+    resp = await client.request(method, path, headers={"X-API-Key": VIEWER_KEY})
+    assert resp.status_code in (200, 422), (
+        f"{method} {path} should accept viewer key, got {resp.status_code}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("method,path,body", ADMIN_ENDPOINTS)
+async def test_viewer_key_blocked_on_writes(
+    client: AsyncClient, auth_patches_with_viewer, method, path, body
+):
+    """Viewer key MUST NOT be able to write — admin key required."""
+    resp = await client.request(method, path, json=body, headers={"X-API-Key": VIEWER_KEY})
+    assert resp.status_code == 403, (
+        f"{method} {path} accepted viewer key for write — admin scope leak. "
+        f"Got {resp.status_code}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_admin_key_still_grants_reads(client: AsyncClient, auth_patches_with_viewer):
+    """Admin key implies viewer scope (back-compat)."""
+    resp = await client.get("/api/v1/entities", headers={"X-API-Key": API_KEY})
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_unknown_key_rejected_even_with_viewer_configured(
+    client: AsyncClient, auth_patches_with_viewer
+):
+    resp = await client.get("/api/v1/entities", headers={"X-API-Key": "neither-admin-nor-viewer"})
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_empty_viewer_key_does_not_authorize_empty_header(
+    client: AsyncClient,
+):
+    """If VIEWER_API_KEY is unset (""), an empty X-API-Key header must not pass."""
+    with (
+        patch("middleware.auth.IS_DEV", False),
+        patch("middleware.auth.API_SECRET_KEY", API_KEY),
+        patch("middleware.auth.VIEWER_API_KEY", ""),
+    ):
+        # No header → 401
+        resp = await client.get("/api/v1/entities")
+        assert resp.status_code == 401
+        # Empty header → 401 (not 403, because no key is "missing" not "invalid")
+        resp = await client.get("/api/v1/entities", headers={"X-API-Key": ""})
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_dashboard_html_does_not_leak_admin_key(client: AsyncClient):
+    """Dashboard HTML at / must inject the viewer key, never the admin key."""
+    with (
+        patch("services.api.main.API_SECRET_KEY", API_KEY),
+        patch("services.api.main.VIEWER_API_KEY", VIEWER_KEY),
+        patch("services.api.main.IS_DEV", False),
+    ):
+        resp = await client.get("/")
+        # Even if the static file doesn't exist in tests, the placeholder fallback shouldn't leak.
+        assert API_KEY not in resp.text, "Admin API_SECRET_KEY leaked into dashboard HTML"

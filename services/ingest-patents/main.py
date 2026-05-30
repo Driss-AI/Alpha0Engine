@@ -38,7 +38,8 @@ def main():
     mode = os.environ.get("RUN_MODE", "loop")
     if mode == "once":
         log.info("RUN_MODE=once — running single ingest then exiting")
-        run_weekly_ingest()
+        from shared.worker_runner import run_once_with_tracking_sync
+        run_once_with_tracking_sync("ingest-patents", run_weekly_ingest)
         log.info("USPTO ingest complete. Exiting.")
         return
 
