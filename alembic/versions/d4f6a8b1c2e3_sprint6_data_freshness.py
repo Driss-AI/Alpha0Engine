@@ -16,6 +16,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # NOTE: `index=True` on the status Column already creates `ix_data_freshness_status`
+    # via op.create_table — do NOT add a separate op.create_index for it (DuplicateTable).
     op.create_table(
         "data_freshness",
         sa.Column("source", sa.String(60), primary_key=True),
@@ -27,9 +29,9 @@ def upgrade() -> None:
         sa.Column("freshness_threshold_minutes", sa.Integer(), nullable=False, server_default="1440"),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
-    op.create_index("ix_data_freshness_status", "data_freshness", ["status"])
 
 
 def downgrade() -> None:
-    op.drop_index("ix_data_freshness_status", table_name="data_freshness")
+    # The status index was created via Column(index=True), so it's auto-dropped
+    # when the table is dropped — no separate op.drop_index needed.
     op.drop_table("data_freshness")
