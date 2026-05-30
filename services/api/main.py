@@ -44,6 +44,7 @@ from routers import (
     brain,
     metrics,
     data_freshness,
+    alerts,
 )
 
 
@@ -167,4 +168,6 @@ app.include_router(pipeline_health.router, prefix="/api/v1", dependencies=_viewe
 app.include_router(watchlist.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(catalysts.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(data_freshness.router, prefix="/api/v1", dependencies=_viewer)
+# alerts router declares its own per-route auth (viewer GETs, admin POST)
+app.include_router(alerts.router, prefix="/api/v1")
 app.include_router(brain.router, prefix="/api/v1", dependencies=_viewer)

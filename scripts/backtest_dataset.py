@@ -26,11 +26,11 @@ load_dotenv()
 
 from sqlmodel import select, col
 from sqlmodel.ext.asyncio.session import AsyncSession
-from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
+from shared.clients.postgres import AsyncSessionLocal
 from shared.schemas.score_snapshot import ScoreSnapshot
 from shared.schemas.daily_prices import DailyPrice
 from shared.schemas.score_validation import ScoreValidation
-from shared.logging import setup_logging, get_logger, Timer
+from shared.logging import setup_logging, get_logger
 
 setup_logging("backtest-dataset")
 logger = get_logger("backtest-dataset")
@@ -111,6 +111,7 @@ async def build_validation_row(
         ticker=ticker,
         entity_id=snapshot.entity_id,
         snapshot_date=snap_date,
+        lane_id=snapshot.lane_id,   # S10: carry lane through to the validation row
         composite_score=snapshot.composite_score,
         conviction_tier=snapshot.conviction_tier or "unscored",
         active_lenses=snapshot.active_lenses or 0,
@@ -148,14 +149,17 @@ async def build_validation_row(
     return row
 
 
-async def run(days: int | None, dry_run: bool):
-    logger.info("Starting backtest dataset build", extra={"days": days, "action": "backtest_build"})
+async def run(days: int | None, dry_run: bool, lane: str | None = None):
+    logger.info("Starting backtest dataset build",
+                extra={"days": days, "lane": lane, "action": "backtest_build"})
 
     async with AsyncSessionLocal() as session:
         query = select(ScoreSnapshot).order_by(col(ScoreSnapshot.snapshot_date).asc())
         if days:
             cutoff = date.today() - timedelta(days=days)
             query = query.where(ScoreSnapshot.snapshot_date >= cutoff)
+        if lane:
+            query = query.where(ScoreSnapshot.lane_id == lane)
 
         snapshots = (await session.exec(query)).all()
         logger.info(f"Found {len(snapshots)} snapshots to process", extra={"records": len(snapshots)})
@@ -228,9 +232,10 @@ async def run(days: int | None, dry_run: bool):
 def main():
     parser = argparse.ArgumentParser(description="Build backtest validation dataset")
     parser.add_argument("--days", type=int, default=None, help="Only process last N days of snapshots")
+    parser.add_argument("--lane", default=None, help="Only process one lane (L1_AI_INFRA / L2_BIOTECH)")
     parser.add_argument("--dry-run", action="store_true", help="Preview without writing to DB")
     args = parser.parse_args()
-    asyncio.run(run(args.days, args.dry_run))
+    asyncio.run(run(args.days, args.dry_run, args.lane))
 
 
 if __name__ == "__main__":

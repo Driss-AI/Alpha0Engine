@@ -55,15 +55,18 @@ def welch_t(a, b):
     return round(t, 3), round(p, 4)
 
 
-async def calibration(horizon: int) -> str:
+async def calibration(horizon: int, lane: str | None = None) -> str:
     field = f"return_{horizon}d"
-    outcome_field = f"outcome_{horizon}d"
 
     async with AsyncSessionLocal() as session:
-        rows = (await session.exec(select(ScoreValidation))).all()
+        query = select(ScoreValidation)
+        if lane:
+            query = query.where(ScoreValidation.lane_id == lane)
+        rows = (await session.exec(query)).all()
 
     if not rows:
-        return "No data. Run backtest_dataset.py first."
+        scope = f" for lane {lane}" if lane else ""
+        return f"No data{scope}. Run backtest_dataset.py first."
 
     by_tier = defaultdict(list)
     for r in rows:
@@ -72,7 +75,8 @@ async def calibration(horizon: int) -> str:
             by_tier[r.conviction_tier].append(r)
 
     lines = [
-        f"# Calibration Report — {horizon}-Day Horizon",
+        f"# Calibration Report — {horizon}-Day Horizon"
+        + (f" — Lane {lane}" if lane else ""),
         f"\nDate: {date.today()}",
         f"Records with {horizon}d returns: {sum(len(v) for v in by_tier.values())}",
     ]
@@ -158,7 +162,7 @@ async def calibration(horizon: int) -> str:
 
 
 async def main_async(args):
-    report = await calibration(args.horizon)
+    report = await calibration(args.horizon, args.lane)
     if args.output:
         with open(args.output, "w") as f:
             f.write(report)
@@ -170,6 +174,7 @@ async def main_async(args):
 def main():
     parser = argparse.ArgumentParser(description="Generate calibration report")
     parser.add_argument("--horizon", type=int, default=90, help="Return horizon in days")
+    parser.add_argument("--lane", default=None, help="Filter to one lane (L1_AI_INFRA / L2_BIOTECH)")
     parser.add_argument("--output", type=str, default=None, help="Output file")
     args = parser.parse_args()
     asyncio.run(main_async(args))

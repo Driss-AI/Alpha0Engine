@@ -87,6 +87,8 @@ PIPELINE: list[Step] = [
          description="5-lens asymmetric composite (terminal scoring step)"),
     Step("brain",                "services/brain/main.py",                critical=False,
          description="Brain candidate scan + narratives"),
+    Step("alert-engine",         "services/alert-engine/main.py",         critical=False,
+         description="Dispatch DEEP_DIVE/SETUP_READY alerts to Telegram (S9)"),
 ]
 
 

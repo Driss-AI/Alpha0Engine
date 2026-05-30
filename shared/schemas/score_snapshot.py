@@ -24,6 +24,7 @@ class ScoreSnapshotBase(SQLModel):
     smart_money_score: Optional[float] = None
     active_lenses: Optional[int] = None
     conviction_tier: Optional[str] = Field(default=None, index=True, max_length=20)
+    lane_id: Optional[str] = Field(default=None, index=True, max_length=40)  # S10 per-lane backtest
     snapshot_date: date = Field(default_factory=date.today, index=True)
 
 

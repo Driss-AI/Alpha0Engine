@@ -86,6 +86,12 @@ def upgrade() -> None:
             if later_col in es_cols:
                 op.drop_column("equity_screens", later_col)
 
+    # score_snapshots gained lane_id in b2d5f8a3c6e9 (same baseline-table pattern).
+    if insp.has_table("score_snapshots"):
+        ss_cols = {c["name"] for c in insp.get_columns("score_snapshots")}
+        if "lane_id" in ss_cols:
+            op.drop_column("score_snapshots", "lane_id")
+
 
 def downgrade() -> None:
     bind = op.get_bind()

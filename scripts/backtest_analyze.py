@@ -82,17 +82,23 @@ def _t_test_two_sample(a: list[float], b: list[float]) -> tuple[float, float]:
     return round(t_stat, 3), round(p_value, 4)
 
 
-async def analyze(min_samples: int) -> str:
+async def analyze(min_samples: int, lane: str | None = None) -> str:
     lines = []
     lines.append("# Alpha0Engine — Backtest Analysis Report")
     lines.append(f"\nGenerated: {date.today()}")
+    if lane:
+        lines.append(f"**Lane:** {lane}")
     lines.append(f"Minimum samples per tier: {min_samples}\n")
 
     async with AsyncSessionLocal() as session:
-        rows = (await session.exec(select(ScoreValidation))).all()
+        query = select(ScoreValidation)
+        if lane:
+            query = query.where(ScoreValidation.lane_id == lane)
+        rows = (await session.exec(query)).all()
 
     if not rows:
-        return "No score_validation data found. Run backtest_dataset.py first."
+        scope = f" for lane {lane}" if lane else ""
+        return f"No score_validation data found{scope}. Run backtest_dataset.py first."
 
     lines.append(f"**Total validation records:** {len(rows)}\n")
 
@@ -187,6 +193,7 @@ async def analyze(min_samples: int) -> str:
     lines.append("| Lens | N | Mean | Median | Win Rate |")
     lines.append("|------|--:|-----:|-------:|---------:|")
 
+    WIN_THRESHOLD = 0.10
     by_lens: dict[str, list[float]] = defaultdict(list)
     for r in rows:
         if r.top_lens and r.return_90d is not None:
@@ -200,8 +207,6 @@ async def analyze(min_samples: int) -> str:
         med = _median(rets)
         wr = sum(1 for r in rets if r >= WIN_THRESHOLD) / len(rets)
         lines.append(f"| {lens} | {len(rets)} | {mean:+.1%} | {med:+.1%} | {wr:.0%} |")
-
-    WIN_THRESHOLD = 0.10
 
     # Summary
     lines.append("\n## Key Findings\n")
@@ -227,7 +232,7 @@ async def analyze(min_samples: int) -> str:
 
 
 async def main_async(args):
-    report = await analyze(args.min_samples)
+    report = await analyze(args.min_samples, args.lane)
     if args.output:
         with open(args.output, "w") as f:
             f.write(report)
@@ -239,6 +244,7 @@ async def main_async(args):
 def main():
     parser = argparse.ArgumentParser(description="Analyze backtest results")
     parser.add_argument("--min-samples", type=int, default=5, help="Minimum samples per tier")
+    parser.add_argument("--lane", default=None, help="Filter to one lane (L1_AI_INFRA / L2_BIOTECH)")
     parser.add_argument("--output", type=str, default=None, help="Output file path")
     args = parser.parse_args()
     asyncio.run(main_async(args))

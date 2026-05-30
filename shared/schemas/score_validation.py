@@ -20,6 +20,7 @@ class ScoreValidationBase(SQLModel):
     ticker: str = Field(index=True, max_length=10)
     entity_id: Optional[str] = Field(default=None, index=True)
     snapshot_date: date = Field(index=True)
+    lane_id: Optional[str] = Field(default=None, index=True, max_length=40)  # S10 per-lane backtest
 
     # Score at time of prediction
     composite_score: float
