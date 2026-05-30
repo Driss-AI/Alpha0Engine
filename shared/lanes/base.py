@@ -70,6 +70,11 @@ class Lane:
 
     universe_filters: UniverseFilter = field(default_factory=UniverseFilter)
 
+    # Has this lane's scoring been forward-validated by backtest? (Sprint 10)
+    # Only calibrated lanes may emit SETUP_READY alerts; uncalibrated lanes are
+    # capped at DEEP_DIVE until their score is shown to predict returns.
+    calibrated: bool = False
+
     def all_keywords(self) -> tuple[str, ...]:
         """Union of explicit keywords + every bottleneck's keywords (deduped)."""
         seen: dict[str, None] = {}

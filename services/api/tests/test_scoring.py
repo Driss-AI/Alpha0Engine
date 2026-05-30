@@ -71,6 +71,24 @@ def test_alertable_only_deep_dive_and_setup():
     assert bucket_label("SETUP_READY") == "SETUP READY"
 
 
+def test_uncalibrated_lane_capped_at_deep_dive():
+    """Sprint 10: an uncalibrated lane can't graduate to SETUP_READY (backtest gate)."""
+    ax = compute_axes(composite_score=0.8, active_lenses=4, market_cap_usd=180e6,
+                      catalyst_proximity_days=20, evidence_count=5,
+                      institutional_confirmation=True, volume_ratio=2.4)
+    calibrated = classify_bucket(ax, has_dated_catalyst=True, lane_calibrated=True)
+    uncalibrated = classify_bucket(ax, has_dated_catalyst=True, lane_calibrated=False)
+    assert calibrated == "SETUP_READY"
+    assert uncalibrated == "DEEP_DIVE"   # gated down
+
+
+def test_lane_calibration_flags():
+    """L1 validated by backtest; L2 not yet (corr ~0)."""
+    from shared.lanes import L1_AI_INFRA, L2_BIOTECH
+    assert L1_AI_INFRA.calibrated is True
+    assert L2_BIOTECH.calibrated is False
+
+
 # ── 9.3 red flags ───────────────────────────────────────────────────────────
 
 def test_red_flags_from_8k_signal():

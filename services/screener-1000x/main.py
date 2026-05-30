@@ -246,10 +246,17 @@ async def score_entity(
         red_flag_count=len(red["red_flags"]),
         has_critical_flag=red["has_critical"],
     )
+    lane_calibrated = True
+    if best_lane_id:
+        try:
+            lane_calibrated = get_lane(best_lane_id).calibrated
+        except KeyError:
+            lane_calibrated = True
     bucket = classify_bucket(
         axes,
         has_critical_flag=red["has_critical"],
         has_dated_catalyst=catalyst_proximity is not None,
+        lane_calibrated=lane_calibrated,
     )
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)

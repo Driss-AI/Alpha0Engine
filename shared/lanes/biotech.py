@@ -75,4 +75,8 @@ L2_BIOTECH = Lane(
         market_cap_max_usd=500e6,     # the micro-cap wedge — SPRB lesson
         sectors=("biotech", "pharma", "healthcare", "life sciences"),
     ),
+    # Backtest 2026-05-30: corr(composite, 90d return) = +0.07 — the linear
+    # composite does NOT yet rank biotech (binary/outlier-driven returns).
+    # Gated to DEEP_DIVE max until event-conditioned scoring is forward-tested.
+    calibrated=False,
 )

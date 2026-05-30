@@ -93,4 +93,7 @@ L1_AI_INFRA = Lane(
             "industrials", "infrastructure", "communication",
         ),
     ),
+    # Backtest 2026-05-30: corr(composite, 90d return) = +0.55, winners/FPs
+    # separate cleanly (winners +66% median vs FPs -22%). Cleared for SETUP_READY.
+    calibrated=True,
 )

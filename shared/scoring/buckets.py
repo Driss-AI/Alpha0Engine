@@ -32,6 +32,7 @@ def classify_bucket(
     *,
     has_critical_flag: bool = False,
     has_dated_catalyst: bool = False,
+    lane_calibrated: bool = True,
 ) -> str:
     """Classify a candidate into an action bucket.
 
@@ -39,7 +40,9 @@ def classify_bucket(
       1. critical flag OR risk >= 80           -> NO_TOUCH
       2. opportunity < 35                       -> PASS
       3. SETUP_READY needs: opportunity >= 60, timing >= 70, tradability >= 50,
-         risk <= 65, confidence >= 50, AND a dated catalyst
+         risk <= 65, confidence >= 50, a dated catalyst, AND a CALIBRATED lane
+         (Sprint 10 — an uncalibrated lane's score isn't proven to rank, so it
+         can't graduate a candidate to SETUP_READY; it caps at DEEP_DIVE).
       4. DEEP_DIVE needs: opportunity >= 55, confidence >= 45, risk <= 70
       5. otherwise                              -> WATCH
     """
@@ -51,13 +54,15 @@ def classify_bucket(
     if axes.opportunity < 35:
         return "PASS"
 
-    # 3. Setup ready — everything lines up AND there's a clock on it
+    # 3. Setup ready — everything lines up, there's a clock on it, AND the lane
+    #    is forward-validated.
     if (axes.opportunity >= 60
             and axes.timing >= 70
             and axes.tradability >= 50
             and axes.risk <= 65
             and axes.confidence >= 50
-            and has_dated_catalyst):
+            and has_dated_catalyst
+            and lane_calibrated):
         return "SETUP_READY"
 
     # 4. Deep dive — strong asymmetry + corroboration, but setup not fully confirmed
