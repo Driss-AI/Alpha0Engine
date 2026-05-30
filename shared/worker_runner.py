@@ -34,15 +34,32 @@ import logging
 from typing import Any, Awaitable, Callable
 
 
+def _coerce_count(value: Any) -> int:
+    """Coerce a worker-return count field to an int.
+
+    Workers return varied shapes: a plain int, or a LIST of items (e.g. brain's
+    `errors` is a list of error entries). A list means "this many"; a number is
+    used as-is; anything else is 0. This keeps the tracking wrapper from crashing
+    on a worker whose stats dict doesn't match the int contract.
+    """
+    if isinstance(value, list):
+        return len(value)
+    if isinstance(value, bool):  # bool is an int subclass — guard before int check
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    return 0
+
+
 def _apply_return(tracker, result: Any) -> None:
     if not isinstance(result, dict):
         return
     if "records_processed" in result:
-        tracker.run.records_processed = int(result["records_processed"])
+        tracker.run.records_processed = _coerce_count(result["records_processed"])
     if "records_skipped" in result:
-        tracker.run.records_skipped = int(result["records_skipped"])
+        tracker.run.records_skipped = _coerce_count(result["records_skipped"])
     if "errors" in result:
-        tracker.run.errors = int(result["errors"])
+        tracker.run.errors = _coerce_count(result["errors"])
     if "metadata" in result and isinstance(result["metadata"], dict):
         tracker.run.run_metadata = result["metadata"]
 
