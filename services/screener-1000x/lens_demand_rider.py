@@ -143,6 +143,37 @@ def _score_institutional_neglect(
     return round(0.5 * mcap_factor + 0.5 * coverage_factor, 4)
 
 
+# Megatrends that the hyperscaler-capex macro signal applies to. A capex
+# inflection lifts the entire AI-infrastructure supply chain, so it amplifies
+# demand for names whose strongest trend is AI/ML.
+_CAPEX_CONTEXT_TRENDS = {"ai_ml"}
+_MAX_CONTEXT_BOOST = 0.20
+
+
+def _context_demand_boost(
+    best_trend: str,
+    market_context: Optional[List[Dict[str, Any]]],
+) -> float:
+    """Sprint 11.3: lift L1 demand when hyperscaler capex is inflecting.
+
+    `market_context` is the set of active market-wide context signals (from the
+    `market_context_signals` table). When a `hyperscaler_capex_inflection` is
+    active and this candidate's strongest megatrend is AI/ML, the whole AI-infra
+    lane gets a modest, bounded boost scaled by the YoY magnitude.
+    """
+    if not market_context or best_trend not in _CAPEX_CONTEXT_TRENDS:
+        return 0.0
+    for ctx in market_context:
+        if ctx.get("context_type") != "hyperscaler_capex_inflection":
+            continue
+        if not ctx.get("is_active", True):
+            continue
+        magnitude = ctx.get("value") or 0.0
+        # 0.10 floor for any active inflection, +0.10 scaled by YoY (capped).
+        return round(min(_MAX_CONTEXT_BOOST, 0.10 + 0.10 * min(magnitude, 1.0)), 4)
+    return 0.0
+
+
 def _score_sector_alignment(sector: Optional[str], megatrend: str) -> float:
     """Check if company's sector aligns with the megatrend."""
     if not sector:
@@ -163,9 +194,14 @@ def score_demand_rider(
     market_cap: Optional[float] = None,
     themes: Optional[List[Dict[str, Any]]] = None,
     filing_text: Optional[str] = None,
+    market_context: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """
     Compute Lens 3 score for structural demand alignment.
+
+    Args:
+        market_context: active market-wide context signals (Sprint 11.3). A
+            hyperscaler capex inflection amplifies AI/ML-aligned demand.
 
     Returns:
         demand_score (0.0-1.0)
@@ -220,7 +256,10 @@ def score_demand_rider(
         0.25 * sector_align +
         0.15 * trend_weight
     )
-    composite = round(min(max(composite, 0.0), 1.0), 4)
+
+    # S11.3: hyperscaler capex inflection lifts the whole AI-infra lane.
+    context_boost = _context_demand_boost(best_trend, market_context)
+    composite = round(min(max(composite + context_boost, 0.0), 1.0), 4)
 
     cited_ids = [s.get("signal_id") for s in signals if s.get("signal_id")]
 
@@ -236,6 +275,7 @@ def score_demand_rider(
                 "institutional_neglect": neglect,
                 "sector_alignment": sector_align,
                 "trend_weight": trend_weight,
+                "context_boost": context_boost,
             },
             "all_trends": trend_scores,
             "best_trend_id": best_trend,

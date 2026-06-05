@@ -15,6 +15,7 @@ import os
 import sys
 import asyncio
 import logging
+from datetime import date
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -25,8 +26,9 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.hyperscaler_capex import HyperscalerCapex, HYPERSCALERS
+from shared.schemas.market_context import MarketContextSignal
 
-from capex_analyzer import build_capex_records
+from capex_analyzer import build_capex_records, derive_market_context
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -107,6 +109,52 @@ async def _upsert_capex(session: AsyncSession, rec: dict) -> bool:
     return rec["is_inflection"] and not was_inflection
 
 
+async def _upsert_market_context(session: AsyncSession, ctx: dict) -> None:
+    """Upsert the market-wide capex-inflection context row (S11.3).
+
+    Keeps exactly one active row per context_type: the latest inflecting period
+    is marked active; any earlier period of the same type is deactivated so the
+    demand-rider lens only ever reads the current macro state.
+    """
+    existing = (await session.exec(
+        select(MarketContextSignal).where(
+            MarketContextSignal.context_type == ctx["context_type"],
+            MarketContextSignal.period == ctx["period"],
+        )
+    )).first()
+
+    if existing:
+        existing.value = ctx["value"]
+        existing.lane_id = ctx["lane_id"]
+        existing.is_active = True
+        existing.details = ctx["details"]
+        existing.as_of_date = date.today()
+        session.add(existing)
+    else:
+        session.add(MarketContextSignal(
+            context_type=ctx["context_type"],
+            lane_id=ctx["lane_id"],
+            value=ctx["value"],
+            period=ctx["period"],
+            source=ctx["source"],
+            is_active=True,
+            details=ctx["details"],
+            as_of_date=date.today(),
+        ))
+
+    # Deactivate stale rows of the same type from earlier periods.
+    stale = (await session.exec(
+        select(MarketContextSignal).where(
+            MarketContextSignal.context_type == ctx["context_type"],
+            MarketContextSignal.period != ctx["period"],
+            MarketContextSignal.is_active == True,  # noqa: E712
+        )
+    )).all()
+    for row in stale:
+        row.is_active = False
+        session.add(row)
+
+
 async def run_capex_ingestion():
     """Daily hyperscaler capex ingestion."""
     logger.info("=" * 60)
@@ -117,6 +165,7 @@ async def run_capex_ingestion():
 
     total_rows = 0
     new_inflections = 0
+    all_records: list[dict] = []
 
     async with AsyncSessionLocal() as session:
         for ticker in HYPERSCALERS:
@@ -126,6 +175,7 @@ async def run_capex_ingestion():
                 logger.warning(f"No capex data for {ticker}")
                 continue
             records = build_capex_records(ticker, company, points)
+            all_records.extend(records)
             for rec in records:
                 try:
                     is_new_inflection = await _upsert_capex(session, rec)
@@ -140,12 +190,32 @@ async def run_capex_ingestion():
                     logger.error(f"capex upsert failed {ticker} {rec['fiscal_period']}: {e}")
             logger.info(f"{ticker}: {len(records)} quarters processed")
 
+        # S11.3: reduce to a market-wide context signal the demand-rider lens reads.
+        context = derive_market_context(all_records)
+        if context is not None:
+            try:
+                await _upsert_market_context(session, context)
+                logger.info(
+                    f"  ⇪ market context: {context['context_type']} {context['period']} "
+                    f"+{context['value']:.0%} YoY ({', '.join(context['details']['inflecting_tickers'])})"
+                )
+            except Exception as e:
+                logger.error(f"market context upsert failed: {e}")
+        else:
+            logger.info("No active capex inflection — no market context written")
+
         await session.commit()
 
     logger.info("=" * 60)
     logger.info(f"CAPEX INGESTION COMPLETE — {total_rows} rows, {new_inflections} new inflections")
     logger.info("=" * 60)
-    return {"records_processed": total_rows, "metadata": {"new_inflections": new_inflections}}
+    return {
+        "records_processed": total_rows,
+        "metadata": {
+            "new_inflections": new_inflections,
+            "market_context": context["period"] if context else None,
+        },
+    }
 
 
 async def run_loop():

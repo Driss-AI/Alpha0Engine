@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from capex_analyzer import (
     compute_yoy, is_inflection, build_capex_records, fiscal_period_label,
+    derive_market_context,
 )
 
 
@@ -61,3 +62,43 @@ def test_build_records_sorts_unordered_input():
     recs = build_capex_records("AMZN", "Amazon", points)
     assert recs[0]["fiscal_period"] == "2025Q1"
     assert recs[1]["fiscal_period"] == "2026Q1"
+
+
+# ── S11.3: market-wide context derivation ──────────────────────────
+
+def test_derive_market_context_none_when_no_inflection():
+    recs = [
+        {"ticker": "MSFT", "fiscal_period": "2026Q1", "capex_yoy_pct": 0.10, "is_inflection": False},
+        {"ticker": "AMZN", "fiscal_period": "2026Q1", "capex_yoy_pct": None, "is_inflection": False},
+    ]
+    assert derive_market_context(recs) is None
+    assert derive_market_context([]) is None
+
+
+def test_derive_market_context_single_inflection():
+    recs = [
+        {"ticker": "MSFT", "fiscal_period": "2026Q1", "capex_yoy_pct": 0.42, "is_inflection": True},
+        {"ticker": "META", "fiscal_period": "2026Q1", "capex_yoy_pct": 0.10, "is_inflection": False},
+    ]
+    ctx = derive_market_context(recs)
+    assert ctx is not None
+    assert ctx["context_type"] == "hyperscaler_capex_inflection"
+    assert ctx["lane_id"] == "L1_AI_INFRA"
+    assert ctx["period"] == "2026Q1"
+    assert ctx["value"] == 0.42
+    assert ctx["details"]["inflecting_tickers"] == ["MSFT"]
+
+
+def test_derive_market_context_picks_latest_period_and_max_yoy():
+    recs = [
+        # older inflection — should be ignored in favor of the latest period
+        {"ticker": "MSFT", "fiscal_period": "2025Q4", "capex_yoy_pct": 0.90, "is_inflection": True},
+        # latest period: two inflecting hyperscalers, report the stronger one
+        {"ticker": "AMZN", "fiscal_period": "2026Q1", "capex_yoy_pct": 0.35, "is_inflection": True},
+        {"ticker": "GOOGL", "fiscal_period": "2026Q1", "capex_yoy_pct": 0.55, "is_inflection": True},
+    ]
+    ctx = derive_market_context(recs)
+    assert ctx["period"] == "2026Q1"
+    assert ctx["value"] == 0.55
+    assert ctx["details"]["inflecting_tickers"] == ["AMZN", "GOOGL"]
+    assert ctx["details"]["count"] == 2

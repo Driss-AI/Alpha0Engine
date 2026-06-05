@@ -18,6 +18,13 @@ jobs:
       - run: pip install ruff mypy
       - run: ruff check services/ shared/
       - run: mypy services/ shared/ --ignore-missing-imports --no-strict-optional
+      # S11.6: cheap structural guards — byte-compile everything (catches syntax
+      # errors in workers CI doesn't otherwise import) and walk the full pipeline
+      # plan without executing it (catches an orphaned/renamed step).
+      - name: Byte-compile all sources
+        run: python -m compileall -q shared services scripts
+      - name: Pipeline dry-run
+        run: python scripts/run_daily_pipeline.py --dry-run
 
   test-api:
     name: Test API

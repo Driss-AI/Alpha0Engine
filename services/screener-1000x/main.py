@@ -9,6 +9,7 @@ import os
 import sys
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -23,6 +24,7 @@ from shared.schemas.entities import Entity
 from shared.schemas.signals import Signal
 from shared.schemas.fundamentals import FundamentalScore
 from shared.schemas.equity_screen import EquityScreen
+from shared.schemas.market_context import MarketContextSignal
 
 from lens_binary_catalyst import score_binary_catalyst
 from lens_earnings_inflection import score_earnings_inflection
@@ -64,6 +66,27 @@ async def get_entity_signals(session: AsyncSession, entity_id: str) -> list:
     ]
 
 
+async def load_active_market_context(session: AsyncSession) -> list[dict]:
+    """Load active market-wide context signals (S11.3).
+
+    Read once per batch and passed into the demand-rider lens so a macro signal
+    (e.g. hyperscaler capex inflection) reaches the score for every candidate.
+    """
+    rows = (await session.exec(
+        select(MarketContextSignal).where(MarketContextSignal.is_active == True)  # noqa: E712
+    )).all()
+    return [
+        {
+            "context_type": r.context_type,
+            "lane_id": r.lane_id,
+            "value": r.value,
+            "period": r.period,
+            "is_active": r.is_active,
+        }
+        for r in rows
+    ]
+
+
 async def get_fundamental_data(session: AsyncSession, entity_id: str) -> dict:
     """Get existing fundamental score data for the entity."""
     result = await session.exec(
@@ -84,6 +107,7 @@ async def get_fundamental_data(session: AsyncSession, entity_id: str) -> dict:
 async def score_entity(
     session: AsyncSession,
     entity: Entity,
+    market_context: Optional[list] = None,
 ) -> EquityScreen:
     """Score a single public entity across all 5 lenses."""
     signals = await get_entity_signals(session, entity.id)
@@ -123,6 +147,7 @@ async def score_entity(
             entity_type=entity.entity_type or "public",
             sector=entity.sector,
             market_cap=market_cap,
+            market_context=market_context,
         )
     except Exception as e:
         logger.error(f"Lens 3 error for {entity.name}: {e}")
@@ -384,6 +409,11 @@ async def run_screening_batch():
             logger.info("No public entities found. Exiting.")
             return
 
+        # S11.3: load active market-wide context once; feeds the demand lens.
+        market_context = await load_active_market_context(session)
+        if market_context:
+            logger.info(f"Active market context: {[c['context_type'] for c in market_context]}")
+
         scored = 0
         errors = 0
         tier_counts = {
@@ -395,7 +425,7 @@ async def run_screening_batch():
             batch = entities[i:i + BATCH_SIZE]
             for entity in batch:
                 try:
-                    result = await score_entity(session, entity)
+                    result = await score_entity(session, entity, market_context)
                     tier_counts[result.conviction_tier] = (
                         tier_counts.get(result.conviction_tier, 0) + 1
                     )

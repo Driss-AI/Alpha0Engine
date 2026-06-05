@@ -29,6 +29,7 @@ from shared.schemas.catalyst_event import CatalystEvent
 from shared.schemas.alert import Alert
 from shared.lanes import get_lane
 from shared.scoring import build_thesis, is_alertable
+from shared.services.alert_outcomes import populate_alert_returns
 
 from alert_formatter import format_alert, build_dedupe_key
 import telegram_client
@@ -169,11 +170,21 @@ async def run_alert_dispatch():
 
         await session.commit()
 
+        # S11.5: close the feedback loop — fill forward returns on matured alerts.
+        matured = 0
+        try:
+            matured = await populate_alert_returns(session)
+            if matured:
+                logger.info(f"Updated forward returns on {matured} matured alert(s)")
+        except Exception as e:
+            logger.error(f"populate_alert_returns failed: {e}")
+
     logger.info("=" * 60)
     logger.info(f"ALERT DISPATCH COMPLETE — {recorded} recorded, {sent} delivered, "
-                f"{skipped_dupe} deduped")
+                f"{skipped_dupe} deduped, {matured} outcomes updated")
     logger.info("=" * 60)
-    return {"records_processed": recorded, "metadata": {"sent": sent, "deduped": skipped_dupe}}
+    return {"records_processed": recorded,
+            "metadata": {"sent": sent, "deduped": skipped_dupe, "outcomes_updated": matured}}
 
 
 async def run_loop():

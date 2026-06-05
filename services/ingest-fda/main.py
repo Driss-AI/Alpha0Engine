@@ -18,7 +18,7 @@ import os
 import sys
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -30,6 +30,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.clients.postgres import AsyncSessionLocal, create_db_and_tables
 from shared.schemas.entities import Entity
 from shared.schemas.fda_event import FDAEvent
+from shared.schemas.signals import Signal
 from shared.services.catalyst_emitter import upsert_catalyst
 
 from fda_client import fetch_recent_approvals
@@ -49,6 +50,70 @@ _CATALYST_TYPE = {
     "pdufa": "pdufa_date",
     "adcom": "adcom_date",
 }
+
+# event_type -> signal value (-1 bearish .. +1 bullish). S11.4: the catalyst
+# score lens reads `signals`, so FDA events must dual-write a Signal alongside
+# the CatalystEvent (calendar truth) to actually reach the binary-catalyst score.
+_SIGNAL_VALUE = {
+    "approval": 0.9,   # de-risking event, strongly bullish
+    "pdufa": 0.6,      # upcoming binary — material catalyst, direction unknown
+    "adcom": 0.6,
+    "crl": -0.8,       # complete response letter — bearish
+}
+
+
+async def _emit_fda_signal(session: AsyncSession, ev: dict, entity: Entity) -> bool:
+    """Dual-write an `fda_catalyst` Signal so it feeds score_binary_catalyst.
+
+    Dedupe on the Signal unique key (source, source_id, signal_type). Returns
+    True if a new signal row was created.
+    """
+    event_date = ev.get("event_date")
+    source_id = "|".join([
+        ev["event_type"],
+        ev.get("drug_name") or "drug",
+        event_date.isoformat() if event_date else "nodate",
+    ])
+
+    existing = (await session.exec(
+        select(Signal).where(
+            Signal.source == "fda_gov",
+            Signal.source_id == source_id,
+            Signal.signal_type == "fda_catalyst",
+        )
+    )).first()
+    if existing:
+        return False
+
+    # Forward catalysts carry proximity; the lens reads catalyst_proximity_days first.
+    proximity = None
+    if event_date and event_date >= date.today():
+        proximity = (event_date - date.today()).days
+
+    signal_dt = (
+        datetime.combine(event_date, datetime.min.time())
+        if event_date else datetime.utcnow()
+    )
+
+    session.add(Signal(
+        entity_id=entity.id,
+        signal_type="fda_catalyst",
+        signal_date=signal_dt,
+        value=_SIGNAL_VALUE.get(ev["event_type"], 0.5),
+        source="fda_gov",
+        source_id=source_id,
+        notes=f"FDA {ev['event_type']}: {ev.get('drug_name') or 'drug'}",
+        resolution_status="resolved",
+        raw_data={
+            "event_type": ev["event_type"],
+            "drug_name": ev.get("drug_name"),
+            "indication": ev.get("indication"),
+            "catalyst_proximity_days": proximity,
+            "lane": "L2_BIOTECH",
+            "bottleneck": "fda_decision",
+        },
+    ))
+    return True
 
 
 def _norm(s: str) -> str:
@@ -130,6 +195,7 @@ async def run_fda_ingestion():
     created = 0
     matched = 0
     catalysts = 0
+    signals = 0
 
     async with AsyncSessionLocal() as session:
         index = await _build_company_index(session)
@@ -167,13 +233,22 @@ async def run_fda_ingestion():
                 except Exception as e:
                     logger.error(f"catalyst emit failed: {e}")
 
+                # S11.4: dual-write the scoring signal.
+                try:
+                    if await _emit_fda_signal(session, ev, entity):
+                        signals += 1
+                except Exception as e:
+                    logger.error(f"fda signal emit failed: {e}")
+
         await session.commit()
 
     logger.info("=" * 60)
     logger.info(f"FDA INGESTION COMPLETE — {created} new events, "
-                f"{matched} matched to entities, {catalysts} catalysts emitted")
+                f"{matched} matched to entities, {catalysts} catalysts emitted, "
+                f"{signals} signals emitted")
     logger.info("=" * 60)
-    return {"records_processed": created, "metadata": {"matched": matched, "catalysts": catalysts}}
+    return {"records_processed": created,
+            "metadata": {"matched": matched, "catalysts": catalysts, "signals": signals}}
 
 
 async def run_loop():

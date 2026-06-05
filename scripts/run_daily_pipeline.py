@@ -49,10 +49,12 @@ class Step:
         return [sys.executable, str(REPO_ROOT / self.script)]
 
 
-# Pipeline order (matches the spec from SPRINT_PLAN.md S6.3):
-#   universe discovery → prices → SEC/EDGAR → 8-K → patents → trials → news
-#   → Form 4 → 13F → entity resolution → fundamental screener → risk filter
-#   → screener-1000x → brain → alerts (alerts deferred until S9 alert-engine ships)
+# Pipeline order (S6.3 + S11.2):
+#   universe discovery → prices → SEC/EDGAR → 8-K → patents → trials → FDA → news
+#   → Form 4 → 13F → GitHub → entity resolution → NLP → fundamental screener
+#   → risk filter → hyperscaler capex → screener-1000x → brain → alert-engine
+#   (S11.2 added ingest-fda + ingest-hyperscaler-capex — previously orphaned on
+#   their own Railway cron but missing from the orchestrator)
 PIPELINE: list[Step] = [
     Step("universe-discovery",   "services/ingest-prices/main.py",        critical=True,
          extra_env={"RUN_MODE": "discover"},
@@ -67,6 +69,8 @@ PIPELINE: list[Step] = [
          description="USPTO patent grants"),
     Step("ingest-trials",        "services/ingest-trials/main.py",        critical=False,
          description="ClinicalTrials.gov (biotech lane)"),
+    Step("ingest-fda",           "services/ingest-fda/main.py",           critical=False,
+         description="OpenFDA approvals (biotech lane)"),
     Step("ingest-news",          "services/ingest-news/main.py",          critical=False,
          description="Finnhub news (soft-fails without FINNHUB_API_KEY)"),
     Step("ingest-form4",         "services/ingest-form4/main.py",         critical=False,
@@ -83,6 +87,8 @@ PIPELINE: list[Step] = [
          description="Fundamental scoring layer"),
     Step("risk-filter",          "services/risk-filter/main.py",          critical=False,
          description="Risk flags + hype detection"),
+    Step("ingest-hyperscaler-capex", "services/ingest-hyperscaler-capex/main.py", critical=False,
+         description="Hyperscaler capex inflection (L1 market-context signal)"),
     Step("screener-1000x",       "services/screener-1000x/main.py",       critical=True,
          description="5-lens asymmetric composite (terminal scoring step)"),
     Step("brain",                "services/brain/main.py",                critical=False,

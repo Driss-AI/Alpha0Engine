@@ -29,6 +29,47 @@ def is_inflection(yoy_pct: Optional[float]) -> bool:
     return yoy_pct is not None and yoy_pct > INFLECTION_THRESHOLD
 
 
+# Lane the hyperscaler-capex signal belongs to (AI-infrastructure supply chain).
+CONTEXT_LANE_ID = "L1_AI_INFRA"
+CONTEXT_TYPE = "hyperscaler_capex_inflection"
+
+
+def derive_market_context(all_records: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    """Reduce per-company capex records to a single market-wide context signal.
+
+    Sprint 11.3: the capex worker used to write `hyperscaler_capex` rows that
+    nothing read (dead-end table). This turns an inflection into a market-WIDE
+    `hyperscaler_capex_inflection` context the demand-rider lens consumes, so a
+    real macro signal lifts the whole L1 AI-infra lane.
+
+    Picks the most recent fiscal period that has ≥1 inflecting hyperscaler and
+    reports the strongest YoY in that period. Returns None when nothing is
+    inflecting (so the caller writes/keeps no active context).
+    """
+    inflecting = [r for r in all_records if r.get("is_inflection") and r.get("capex_yoy_pct") is not None]
+    if not inflecting:
+        return None
+
+    # Latest period present among inflecting records ("2026Q1" sorts correctly).
+    latest_period = max(r["fiscal_period"] for r in inflecting)
+    in_period = [r for r in inflecting if r["fiscal_period"] == latest_period]
+    max_yoy = max(r["capex_yoy_pct"] for r in in_period)
+    tickers = sorted({r["ticker"] for r in in_period})
+
+    return {
+        "context_type": CONTEXT_TYPE,
+        "lane_id": CONTEXT_LANE_ID,
+        "value": round(max_yoy, 4),
+        "period": latest_period,
+        "source": "hyperscaler-capex",
+        "details": {
+            "inflecting_tickers": tickers,
+            "max_yoy_pct": round(max_yoy, 4),
+            "count": len(in_period),
+        },
+    }
+
+
 def build_capex_records(
     ticker: str,
     company: str,

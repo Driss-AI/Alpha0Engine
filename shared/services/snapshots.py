@@ -47,6 +47,7 @@ async def write_daily_snapshots(session: AsyncSession) -> int:
                     smart_money_score=screen.smart_money_score,
                     active_lenses=screen.active_lenses,
                     conviction_tier=screen.conviction_tier,
+                    lane_id=screen.best_lane_id,  # S11.1: tag live snapshots with best lane
                     snapshot_date=today,
                 )
             else:
@@ -58,6 +59,7 @@ async def write_daily_snapshots(session: AsyncSession) -> int:
                 snapshot.smart_money_score = screen.smart_money_score
                 snapshot.active_lenses = screen.active_lenses
                 snapshot.conviction_tier = screen.conviction_tier
+                snapshot.lane_id = screen.best_lane_id  # S11.1: keep lane tag current
 
             session.add(snapshot)
             total_count += 1

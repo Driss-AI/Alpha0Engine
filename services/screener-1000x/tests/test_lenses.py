@@ -127,6 +127,29 @@ class TestBinaryCatalyst:
         )
         assert result["catalyst_score"] == 0.0
 
+    def test_fda_catalyst_signal_feeds_score(self):
+        """S11.4: an `fda_catalyst` signal (dual-written by ingest-fda) must
+        reach the binary-catalyst score, not just the calendar."""
+        signals = [
+            {
+                "signal_type": "fda_catalyst",
+                "signal_id": "sig-1",
+                "notes": "FDA pdufa: drugX",
+                "raw_data": {"event_type": "pdufa", "catalyst_proximity_days": 45},
+                "signal_date": "2026-07-01",
+            }
+        ]
+        catalysts = detect_catalysts_from_signals(signals)
+        assert any(c["type"] == "fda_approval" for c in catalysts)
+
+        result = score_binary_catalyst(
+            market_cap=120_000_000,    # micro-cap
+            cash_runway_months=24,
+            signals=signals,
+        )
+        assert result["catalyst_score"] > 0.0
+        assert "sig-1" in result["cited_signal_ids"]
+
 
 # ═══════════════════════════════════════════════════════════
 # LENS 2 — Earnings Inflection
@@ -234,6 +257,65 @@ class TestDemandRider:
         )
         assert result["demand_score"] > 0.3
         assert result["megatrend_alignment"] is not None
+
+    # ── S11.3: hyperscaler capex inflection lifts AI-infra demand ──
+    def _ai_signals(self):
+        return [
+            {"signal_type": "patent_filing", "notes": "AI inference accelerator + gpu computing patent",
+             "raw_data": {}, "signal_date": None},
+        ]
+
+    def _capex_context(self, value=0.40, active=True):
+        return [{
+            "context_type": "hyperscaler_capex_inflection",
+            "lane_id": "L1_AI_INFRA", "value": value, "period": "2026Q1",
+            "is_active": active,
+        }]
+
+    def test_capex_context_raises_ai_demand(self):
+        """An active capex inflection strictly raises an AI candidate's demand."""
+        base = score_demand_rider(
+            signals=self._ai_signals(), entity_type="public",
+            sector="semiconductors", market_cap=200_000_000,
+        )
+        boosted = score_demand_rider(
+            signals=self._ai_signals(), entity_type="public",
+            sector="semiconductors", market_cap=200_000_000,
+            market_context=self._capex_context(),
+        )
+        assert boosted["demand_score"] > base["demand_score"]
+        assert boosted["demand_details"]["components"]["context_boost"] > 0
+
+    def test_capex_context_inactive_no_boost(self):
+        """An inactive context row must not lift the score."""
+        base = score_demand_rider(
+            signals=self._ai_signals(), entity_type="public",
+            sector="semiconductors", market_cap=200_000_000,
+        )
+        same = score_demand_rider(
+            signals=self._ai_signals(), entity_type="public",
+            sector="semiconductors", market_cap=200_000_000,
+            market_context=self._capex_context(active=False),
+        )
+        assert same["demand_score"] == base["demand_score"]
+
+    def test_capex_context_only_applies_to_ai(self):
+        """Capex inflection should not lift a non-AI (e.g. biotech) candidate."""
+        bio_signals = [
+            {"signal_type": "clinical_trial", "notes": "gene therapy crispr car-t readout",
+             "raw_data": {}, "signal_date": None},
+        ]
+        base = score_demand_rider(
+            signals=bio_signals, entity_type="public",
+            sector="biotech", market_cap=200_000_000,
+        )
+        same = score_demand_rider(
+            signals=bio_signals, entity_type="public",
+            sector="biotech", market_cap=200_000_000,
+            market_context=self._capex_context(),
+        )
+        assert same["demand_score"] == base["demand_score"]
+        assert same["demand_details"]["components"]["context_boost"] == 0
 
 
 # ═══════════════════════════════════════════════════════════

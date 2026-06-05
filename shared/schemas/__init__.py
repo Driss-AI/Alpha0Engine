@@ -14,6 +14,7 @@ from .fda_event import FDAEvent, FDA_EVENT_TYPES
 from .hyperscaler_capex import HyperscalerCapex, HYPERSCALERS
 from .evidence_item import EvidenceItem, EVIDENCE_SOURCES
 from .alert import Alert
+from .market_context import MarketContextSignal, MARKET_CONTEXT_TYPES
 
 __all__ = [
     "Entity", "EntityCreate", "EntityRead", "EntityUpdate",
@@ -32,4 +33,5 @@ __all__ = [
     "HyperscalerCapex", "HYPERSCALERS",
     "EvidenceItem", "EVIDENCE_SOURCES",
     "Alert",
+    "MarketContextSignal", "MARKET_CONTEXT_TYPES",
 ]
