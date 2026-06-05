@@ -533,6 +533,42 @@ class TestLaneAwareWeights:
 
 
 # ═══════════════════════════════════════════════════════════
+# Coverage fix — business description drives lane match + demand lens
+# (root cause: public entities had no description, so the lane router and
+#  demand lens had only name+sector to match → nothing classified.)
+# ═══════════════════════════════════════════════════════════
+class TestDescriptionDrivesLaneAndDemand:
+    # A realistic yfinance longBusinessSummary for an AI-infra power name.
+    BLOOM_DESC = (
+        "Bloom Energy Corporation designs, manufactures, and installs solid-oxide "
+        "fuel cell systems for on-site power generation. Its Energy Server delivers "
+        "baseload power and electricity to data centers and utilities, supporting "
+        "grid resiliency and hydrogen fuel applications."
+    )
+
+    def test_description_matches_ai_infra_lane(self):
+        """With a real description (no signals), a power name matches L1."""
+        from shared.lanes import match_lanes
+        matches = match_lanes(text=self.BLOOM_DESC, sector="Utilities",
+                              market_cap_usd=5e9, exchange="NYSE")
+        ids = [m.lane_id for m in matches]
+        assert "L1_AI_INFRA" in ids
+        l1 = next(m for m in matches if m.lane_id == "L1_AI_INFRA")
+        assert "power" in l1.bottlenecks
+
+    def test_demand_fires_from_description_without_signals(self):
+        """The demand lens lights up from filing_text alone (no signals) —
+        this is what the screener now passes as entity.description."""
+        no_signal_no_text = score_demand_rider(signals=[], sector="Utilities",
+                                               market_cap=5e9)
+        with_desc = score_demand_rider(signals=[], sector="Utilities",
+                                       market_cap=5e9, filing_text=self.BLOOM_DESC)
+        assert no_signal_no_text["demand_score"] == 0.0
+        assert with_desc["demand_score"] > 0.0
+        assert with_desc["megatrend_alignment"] is not None
+
+
+# ═══════════════════════════════════════════════════════════
 # Run
 # ═══════════════════════════════════════════════════════════
 if __name__ == "__main__":

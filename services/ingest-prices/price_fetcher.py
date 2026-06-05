@@ -164,6 +164,9 @@ def fetch_market_caps(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
                     "sector": info.get("sector"),
                     "industry": info.get("industry"),
                     "company_name": info.get("shortName") or info.get("longName"),
+                    # Business description — powers lane matching + the demand lens
+                    # (without it, public entities have only name+sector to match on).
+                    "business_summary": info.get("longBusinessSummary"),
                     # Short interest data (Lens 4: Float Mechanics)
                     "shares_short": info.get("sharesShort"),
                     "short_pct_float": info.get("shortPercentOfFloat"),

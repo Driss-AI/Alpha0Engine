@@ -148,6 +148,9 @@ async def score_entity(
             sector=entity.sector,
             market_cap=market_cap,
             market_context=market_context,
+            # Feed the business description so megatrend alignment can fire even
+            # before signals accrue (the lane router reads entity.description too).
+            filing_text=getattr(entity, "description", None),
         )
     except Exception as e:
         logger.error(f"Lens 3 error for {entity.name}: {e}")

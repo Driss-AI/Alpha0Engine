@@ -222,6 +222,25 @@ async def run_price_ingestion():
 
             try:
                 mcap_info = mcap_data.get(ticker, {})
+
+                # Backfill entity business description + sector (fill-if-empty).
+                # This is the text the lane router + demand lens match against —
+                # without it, public names like BE carry no megatrend keywords and
+                # match no lane. Reuses the .info we already fetched (no extra call).
+                enriched = False
+                bsum = mcap_info.get("business_summary")
+                if bsum and not getattr(entity, "description", None):
+                    entity.description = bsum
+                    enriched = True
+                if mcap_info.get("sector") and not entity.sector:
+                    entity.sector = mcap_info.get("sector")
+                    enriched = True
+                if mcap_info.get("industry") and not entity.subsector:
+                    entity.subsector = mcap_info.get("industry")
+                    enriched = True
+                if enriched:
+                    session.add(entity)
+
                 stored = await store_prices(
                     session, ticker, entity.id, records, mcap_info,
                 )
