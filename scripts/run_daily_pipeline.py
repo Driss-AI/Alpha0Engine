@@ -95,6 +95,8 @@ PIPELINE: list[Step] = [
          description="Brain candidate scan + narratives"),
     Step("alert-engine",         "services/alert-engine/main.py",         critical=False,
          description="Dispatch DEEP_DIVE/SETUP_READY alerts to Telegram (S9)"),
+    Step("lane-calibration",     "scripts/recompute_lane_calibration.py", critical=False,
+         description="Recompute per-lane live calibration from matured alerts (S12)"),
 ]
 
 

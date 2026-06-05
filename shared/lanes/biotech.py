@@ -77,6 +77,7 @@ L2_BIOTECH = Lane(
     ),
     # Backtest 2026-05-30: corr(composite, 90d return) = +0.07 — the linear
     # composite does NOT yet rank biotech (binary/outlier-driven returns).
-    # Gated to DEEP_DIVE max until event-conditioned scoring is forward-tested.
-    calibrated=False,
+    # Unvalidated → capped at DEEP_DIVE until event-conditioned scoring is
+    # forward-tested on live matured alerts (Sprint 12).
+    calibration_status="unvalidated",
 )

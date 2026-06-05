@@ -94,6 +94,9 @@ L1_AI_INFRA = Lane(
         ),
     ),
     # Backtest 2026-05-30: corr(composite, 90d return) = +0.55, winners/FPs
-    # separate cleanly (winners +66% median vs FPs -22%). Cleared for SETUP_READY.
-    calibrated=True,
+    # separate cleanly (winners +66% median vs FPs -22%). That backtest is
+    # SUGGESTIVE but circular (seed_known_cases hand-assigns lens scores AND
+    # labels winners), so it earns research_validated — NOT live_validated. Caps
+    # at DEEP_DIVE until matured live alerts clear the bar (Sprint 12).
+    calibration_status="research_validated",
 )

@@ -271,17 +271,17 @@ async def score_entity(
         red_flag_count=len(red["red_flags"]),
         has_critical_flag=red["has_critical"],
     )
-    lane_calibrated = True
+    lane_live_validated = True
     if best_lane_id:
         try:
-            lane_calibrated = get_lane(best_lane_id).calibrated
+            lane_live_validated = get_lane(best_lane_id).is_live_validated()
         except KeyError:
-            lane_calibrated = True
+            lane_live_validated = True
     bucket = classify_bucket(
         axes,
         has_critical_flag=red["has_critical"],
         has_dated_catalyst=catalyst_proximity is not None,
-        lane_calibrated=lane_calibrated,
+        lane_live_validated=lane_live_validated,
     )
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)

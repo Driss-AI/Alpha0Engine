@@ -14,6 +14,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Optional
 
+# Calibration lifecycle (Sprint 12) — replaces the old `calibrated: bool`.
+#   unvalidated        — the lane's score is not shown to predict returns.
+#   research_validated — backtest-suggestive (e.g. seed-backtest correlation) but
+#                        NOT proven on live forward data. Still capped at DEEP_DIVE.
+#   live_validated     — cleared the live bar on matured alerts. The ONLY status
+#                        that unlocks SETUP_READY (see shared/scoring/buckets.py
+#                        and shared/scoring/calibration.py for the thresholds).
+CALIBRATION_STATUSES = ("unvalidated", "research_validated", "live_validated")
+
 
 @dataclass(frozen=True)
 class UniverseFilter:
@@ -70,10 +79,21 @@ class Lane:
 
     universe_filters: UniverseFilter = field(default_factory=UniverseFilter)
 
-    # Has this lane's scoring been forward-validated by backtest? (Sprint 10)
-    # Only calibrated lanes may emit SETUP_READY alerts; uncalibrated lanes are
-    # capped at DEEP_DIVE until their score is shown to predict returns.
-    calibrated: bool = False
+    # Calibration lifecycle (Sprint 12). Only `live_validated` lanes may emit
+    # SETUP_READY; the rest cap at DEEP_DIVE until proven on live forward data.
+    calibration_status: str = "unvalidated"
+
+    # Stats that justify the CURRENT status — filled in when a lane is promoted,
+    # using the numbers `scripts/recompute_lane_calibration.py` reports. They make
+    # each promotion auditable right here in the config (code-as-config).
+    sample_size: int = 0                              # # matured alerts behind the status
+    live_win_rate_90d: Optional[float] = None         # fraction up at 90d
+    false_positive_rate: Optional[float] = None       # fraction materially negative at 90d
+    median_forward_return_90d: Optional[float] = None # median 90d return of alerts
+
+    def is_live_validated(self) -> bool:
+        """Only live-validated lanes may graduate a candidate to SETUP_READY."""
+        return self.calibration_status == "live_validated"
 
     def all_keywords(self) -> tuple[str, ...]:
         """Union of explicit keywords + every bottleneck's keywords (deduped)."""
@@ -116,3 +136,9 @@ class Lane:
                 raise ValueError(
                     f"Lane {self.lane_id} scoring_weights sum to {total:.4f}, expected ~1.0"
                 )
+        # Fail loud on a mistyped calibration status (it gates real alerts).
+        if self.calibration_status not in CALIBRATION_STATUSES:
+            raise ValueError(
+                f"Lane {self.lane_id} calibration_status={self.calibration_status!r}, "
+                f"expected one of {CALIBRATION_STATUSES}"
+            )

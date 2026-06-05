@@ -71,22 +71,68 @@ def test_alertable_only_deep_dive_and_setup():
     assert bucket_label("SETUP_READY") == "SETUP READY"
 
 
-def test_uncalibrated_lane_capped_at_deep_dive():
-    """Sprint 10: an uncalibrated lane can't graduate to SETUP_READY (backtest gate)."""
+def test_setup_ready_requires_live_validated():
+    """Sprint 12: only a live_validated lane can graduate to SETUP_READY."""
     ax = compute_axes(composite_score=0.8, active_lenses=4, market_cap_usd=180e6,
                       catalyst_proximity_days=20, evidence_count=5,
                       institutional_confirmation=True, volume_ratio=2.4)
-    calibrated = classify_bucket(ax, has_dated_catalyst=True, lane_calibrated=True)
-    uncalibrated = classify_bucket(ax, has_dated_catalyst=True, lane_calibrated=False)
-    assert calibrated == "SETUP_READY"
-    assert uncalibrated == "DEEP_DIVE"   # gated down
+    live = classify_bucket(ax, has_dated_catalyst=True, lane_live_validated=True)
+    not_live = classify_bucket(ax, has_dated_catalyst=True, lane_live_validated=False)
+    assert live == "SETUP_READY"
+    assert not_live == "DEEP_DIVE"   # research_validated / unvalidated gated down
 
 
-def test_lane_calibration_flags():
-    """L1 validated by backtest; L2 not yet (corr ~0)."""
+def test_lane_calibration_statuses():
+    """Sprint 12: L1 research_validated (backtest-suggestive), L2 unvalidated.
+    Neither is live_validated yet, so neither can emit SETUP_READY."""
     from shared.lanes import L1_AI_INFRA, L2_BIOTECH
-    assert L1_AI_INFRA.calibrated is True
-    assert L2_BIOTECH.calibrated is False
+    assert L1_AI_INFRA.calibration_status == "research_validated"
+    assert L2_BIOTECH.calibration_status == "unvalidated"
+    assert L1_AI_INFRA.is_live_validated() is False
+    assert L2_BIOTECH.is_live_validated() is False
+
+
+def test_invalid_calibration_status_rejected():
+    """A mistyped status must fail loud at construction (it gates real alerts)."""
+    import pytest
+    from shared.lanes.base import Lane
+    with pytest.raises(ValueError):
+        Lane(lane_id="LX", name="x", megatrend="x", calibration_status="validated")
+
+
+def test_calibration_stats_and_promotion():
+    """Sprint 12.3: stats + promotion decision from matured-alert 90d returns."""
+    from shared.scoring import compute_lane_stats, evaluate_promotion
+
+    # 24 alerts: 18 winners (~+30%), 6 losers (3 materially wrong at -30%).
+    returns = [0.30] * 18 + [-0.05] * 3 + [-0.30] * 3
+    stats = compute_lane_stats(returns)
+    assert stats["sample_size"] == 24
+    assert stats["live_win_rate_90d"] == round(18 / 24, 4)
+    assert stats["false_positive_rate"] == round(3 / 24, 4)   # only the -30% ones
+    assert stats["median_forward_return_90d"] == 0.30
+
+    decision = evaluate_promotion(stats, "research_validated")
+    assert decision["clears_bar"] is True
+    assert decision["recommended_status"] == "live_validated"
+    assert decision["reasons"] == []
+
+
+def test_calibration_promotion_holds_below_bar():
+    """Too few alerts / weak returns must NOT promote — holds current status."""
+    from shared.scoring import compute_lane_stats, evaluate_promotion
+
+    # Only 5 alerts and weak — fails sample size AND median return.
+    stats = compute_lane_stats([0.05, -0.10, 0.02, -0.30, 0.01])
+    decision = evaluate_promotion(stats, "research_validated")
+    assert decision["clears_bar"] is False
+    assert decision["recommended_status"] == "research_validated"
+    assert any("sample_size" in r for r in decision["reasons"])
+
+    # Empty history → unvalidated stays unvalidated.
+    empty = evaluate_promotion(compute_lane_stats([]), "unvalidated")
+    assert empty["clears_bar"] is False
+    assert empty["recommended_status"] == "unvalidated"
 
 
 # ── 9.3 red flags ───────────────────────────────────────────────────────────
