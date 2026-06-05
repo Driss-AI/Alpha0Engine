@@ -92,7 +92,9 @@ def _score_institutional_buying(
     total_value = 0
     for sig in recent_buys:
         raw = sig.get("raw_data") or {}
-        total_value += raw.get("value_usd", 0) or raw.get("value", 0) or 0
+        # ingest-13f writes `holding_value_usd`; older paths used value_usd/value.
+        total_value += (raw.get("value_usd", 0) or raw.get("holding_value_usd", 0)
+                        or raw.get("value", 0) or 0)
 
     # Value relative to market cap (if known)
     value_ratio_score = 0.3
@@ -135,11 +137,16 @@ def _score_insider_buying(
     sells = []
     for sig in signals_form4:
         raw = sig.get("raw_data") or {}
+        st = sig.get("signal_type")
         tx_type = raw.get("transaction_type", "").lower()
         notes = (sig.get("notes") or "").lower()
 
-        is_buy = "purchase" in tx_type or "buy" in notes or "acquisition" in tx_type
-        is_sell = "sale" in tx_type or "sell" in notes or "disposition" in tx_type
+        # The signal_type itself encodes direction (S8 code-first form-4); fall
+        # back to transaction_type/notes for legacy rows.
+        is_buy = (st == "insider_buy_cluster"
+                  or "purchase" in tx_type or "buy" in notes or "acquisition" in tx_type)
+        is_sell = (st == "insider_sell_cluster"
+                   or "sale" in tx_type or "sell" in notes or "disposition" in tx_type)
 
         sig_date = sig.get("signal_date")
         is_recent = True
@@ -265,9 +272,14 @@ def score_smart_money(
         insider_buy_value_usd
         smart_money_details
     """
-    # Separate signals by type
-    signals_13f = [s for s in signals if s.get("signal_type") == "sec_13f"]
-    signals_form4 = [s for s in signals if s.get("signal_type") in ("form_4_insider", "form_4")]
+    # Separate signals by type. NOTE: the S8 ingesters emit `institutional_accumulation`
+    # (ingest-13f) and `insider_buy_cluster`/`insider_sell_cluster` (ingest-form4);
+    # the older `sec_13f`/`form_4_insider` names are kept for back-compat.
+    signals_13f = [s for s in signals
+                   if s.get("signal_type") in ("institutional_accumulation", "sec_13f")]
+    signals_form4 = [s for s in signals
+                     if s.get("signal_type") in ("insider_buy_cluster", "insider_sell_cluster",
+                                                 "form_4_insider", "form_4")]
 
     # Score each dimension
     inst_result = _score_institutional_buying(signals_13f, market_cap)

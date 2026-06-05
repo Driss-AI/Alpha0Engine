@@ -416,6 +416,42 @@ class TestSmartMoney:
         result = score_smart_money(signals, market_cap=80_000_000)
         assert result["smart_money_score"] > 0.4
 
+    # ── Coverage fix: the lens must read the signal types the S8 ingesters
+    #    ACTUALLY emit (institutional_accumulation / insider_buy_cluster), not the
+    #    legacy sec_13f / form_4_insider names. Previously these scored 0. ──
+    def test_reads_real_ingester_signal_types(self):
+        signals = [
+            # ingest-13f emits institutional_accumulation w/ holding_value_usd
+            {"signal_type": "institutional_accumulation", "signal_date": "2026-04-01",
+             "raw_data": {"holding_value_usd": 4_000_000, "fund": "Tiger"}, "notes": "13F"},
+            {"signal_type": "institutional_accumulation", "signal_date": "2026-04-10",
+             "raw_data": {"holding_value_usd": 3_000_000, "fund": "Whale"}, "notes": "13F"},
+            # ingest-form4 emits insider_buy_cluster w/ transaction_type Purchase
+            {"signal_type": "insider_buy_cluster", "signal_date": "2026-04-05",
+             "raw_data": {"transaction_type": "Purchase", "value_usd": 250_000,
+                          "insider_name": "CEO"}, "notes": "open-market buy"},
+            {"signal_type": "insider_buy_cluster", "signal_date": "2026-04-08",
+             "raw_data": {"transaction_type": "Purchase", "value_usd": 120_000,
+                          "insider_name": "CFO"}, "notes": "open-market buy"},
+        ]
+        result = score_smart_money(signals, market_cap=60_000_000)
+        assert result["smart_money_score"] > 0.0          # was 0 before the fix
+        assert result["institutional_buys_13f"] == 2
+        assert result["insider_buys_form4"] == 2
+
+    def test_insider_sell_cluster_counts_as_selling(self):
+        """insider_sell_cluster must register as sells (not silently ignored)."""
+        signals = [
+            {"signal_type": "insider_buy_cluster", "signal_date": "2026-04-05",
+             "raw_data": {"transaction_type": "Purchase", "value_usd": 100_000,
+                          "insider_name": "CEO"}, "notes": "buy"},
+            {"signal_type": "insider_sell_cluster", "signal_date": "2026-04-06",
+             "raw_data": {"transaction_type": "Sale", "value_usd": 900_000,
+                          "insider_name": "CFO"}, "notes": "sale"},
+        ]
+        r = _score_insider_buying(signals, 60_000_000)
+        assert r["buy_count"] == 1          # only the buy cluster counts as a buy
+
 
 # ═══════════════════════════════════════════════════════════
 # COMPOSITE ENGINE
