@@ -30,6 +30,7 @@ from shared.schemas.alert import Alert
 from shared.lanes import get_lane
 from shared.scoring import build_thesis, is_alertable
 from shared.services.alert_outcomes import populate_alert_returns
+from shared.services.memo import build_memo, memo_summary_lines
 
 from alert_formatter import format_alert, build_dedupe_key
 import telegram_client
@@ -147,11 +148,20 @@ async def run_alert_dispatch():
                           "catalyst_type": None, "catalyst_date": None}
 
             axes = (raw.get("axes") or {})
+            red_flags = raw.get("red_flags", [])
+            mechanics = {"float": c.float_shares, "short_pct_float": c.short_pct_float}
+
+            # S13: one-page memo — stored on the alert + summarized in the message.
+            memo = build_memo(
+                ticker=c.ticker, company=c.company_name, lane_name=lane_name,
+                bucket=c.bucket, thesis=thesis, axes=axes,
+                red_flags=red_flags, mechanics=mechanics,
+            )
             message = format_alert(
                 ticker=c.ticker, company=c.company_name, lane_name=lane_name,
                 thesis=thesis, axes=axes, bucket=c.bucket,
-                red_flags=raw.get("red_flags", []),
-                mechanics={"float": c.float_shares, "short_pct_float": c.short_pct_float},
+                red_flags=red_flags, mechanics=mechanics,
+                memo_summary=memo_summary_lines(memo),
             )
 
             delivered = await telegram_client.send_message(message)
@@ -161,7 +171,8 @@ async def run_alert_dispatch():
                 opportunity_score=c.opportunity_score, risk_score=c.risk_score,
                 timing_score=c.timing_score, why_now=thesis.get("why_now"),
                 message=message, delivered=delivered,
-                payload={"dedupe_key": build_dedupe_key(c.ticker, lane_id, c.bucket)},
+                payload={"dedupe_key": build_dedupe_key(c.ticker, lane_id, c.bucket),
+                         "memo": memo},
             ))
             recorded += 1
             if delivered:

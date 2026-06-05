@@ -7,6 +7,8 @@ from shared.schemas.entities import Entity
 from shared.schemas.equity_screen import EquityScreen
 from shared.schemas.ticker_timeline import TickerTimeline
 from shared.schemas.signals import Signal
+from shared.schemas.candidate_lane import CandidateLane
+from shared.schemas.evidence_item import EvidenceItem
 
 
 async def _seed_entity(session: AsyncSession, ticker: str = "ACME", cik: str = "0001234") -> Entity:
@@ -134,3 +136,33 @@ async def test_research_found(client: AsyncClient, session: AsyncSession):
     assert data["ticker"] == "ACME"
     assert data["lens_scorecard"] is not None
     assert data["lens_scorecard"]["conviction_tier"] == "HIGH"
+
+
+@pytest.mark.asyncio
+async def test_research_includes_memo(client: AsyncClient, session: AsyncSession):
+    """Sprint 13: the deep-dive page renders a one-page memo for a live candidate."""
+    entity = await _seed_entity(session)
+    screen = await _seed_screen(session, entity)
+    screen.best_lane_id = "L1_AI_INFRA"
+    screen.bucket = "DEEP_DIVE"
+    screen.opportunity_score = 78
+    screen.risk_score = 42
+    screen.short_pct_float = 0.25
+    screen.float_shares = 11_000_000
+    session.add(screen)
+    session.add(CandidateLane(entity_id=entity.id, ticker="ACME",
+                              lane_id="L1_AI_INFRA", lane_score=0.6,
+                              bottleneck_exposure=["power", "data_center"]))
+    session.add(EvidenceItem(entity_id=entity.id, ticker="ACME", lane_id="L1_AI_INFRA",
+                             source="edgar", source_url="https://sec.gov/acme-8k",
+                             summary="20-yr power purchase agreement"))
+    await session.commit()
+
+    resp = await client.get("/api/v1/1000x/ACME/research")
+    assert resp.status_code == 200
+    memo = resp.json()["memo"]
+    assert memo is not None
+    assert memo["ticker"] == "ACME"
+    assert memo["bottleneck"] == "power"                 # first candidate-lane bottleneck
+    assert any(e["source_url"] for e in memo["evidence"])
+    assert memo["what_would_invalidate"]                 # always present

@@ -12,6 +12,9 @@ from shared.schemas.signals import Signal, SignalRead
 from shared.schemas.ticker_timeline import TickerTimeline, TickerTimelineRead
 from shared.schemas.candidate_lane import CandidateLane
 from shared.schemas.evidence_item import EvidenceItem
+from shared.schemas.catalyst_event import CatalystEvent
+from shared.scoring import build_thesis
+from shared.services.memo import build_memo
 
 router = APIRouter(tags=["Deep Dive"])
 
@@ -225,6 +228,54 @@ async def get_ticker_research_page(
             },
         }
 
+    # ── Sprint 13: one-page memo for this live candidate ─────────────────────
+    memo = None
+    if screen and screen.best_lane_id:
+        try:
+            from shared.lanes import get_lane
+            try:
+                lane_name = get_lane(screen.best_lane_id).name
+            except KeyError:
+                lane_name = screen.best_lane_id
+
+            best_bottlenecks: List[str] = []
+            for lc in lanes_ctx:
+                if lc["lane_id"] == screen.best_lane_id:
+                    best_bottlenecks = lc.get("bottleneck_exposure") or []
+                    break
+
+            today = datetime.now(timezone.utc).date()
+            cat_rows = (await session.exec(
+                select(CatalystEvent).where(
+                    CatalystEvent.ticker == symbol,
+                    CatalystEvent.status == "upcoming",
+                ).order_by(CatalystEvent.expected_date)
+            )).all()
+            nearest = None
+            for r in cat_rows:
+                if r.expected_date and r.expected_date >= today:
+                    nearest = {"catalyst_type": r.catalyst_type,
+                               "expected_date": r.expected_date, "title": r.title}
+                    break
+
+            thesis = build_thesis(
+                ticker=symbol, company=screen.company_name,
+                lane_id=screen.best_lane_id, bottlenecks=best_bottlenecks,
+                evidence=[{"summary": e["summary"], "source_url": e["source_url"],
+                           "source": e["source"]} for e in evidence_rows],
+                nearest_catalyst=nearest,
+                short_pct_float=screen.short_pct_float,
+            ).to_dict()
+            memo = build_memo(
+                ticker=symbol, company=screen.company_name, lane_name=lane_name,
+                bucket=bucket or "WATCH", thesis=thesis, axes=axis_scores or {},
+                red_flags=red_flags or [],
+                mechanics={"float": screen.float_shares,
+                           "short_pct_float": screen.short_pct_float},
+            )
+        except Exception:
+            memo = None
+
     return {
         "ticker": symbol,
         "entity": entity.model_dump() if entity else None,
@@ -236,6 +287,8 @@ async def get_ticker_research_page(
         "red_flags": red_flags,
         "lanes": lanes_ctx,
         "evidence": evidence_rows,
+        # Sprint 13 one-page memo
+        "memo": memo,
         "timeline": [item.model_dump() for item in timeline_result.all()],
         "generated_at": datetime.now(timezone.utc),
     }

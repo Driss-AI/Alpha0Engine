@@ -20,10 +20,45 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from middleware.auth import require_admin_key, require_api_key
 from shared.clients.postgres import get_session
 from shared.schemas.alert import Alert
+from shared.services.memo import build_memo, render_memo_markdown
 
 router = APIRouter(tags=["Alerts"])
 
 MY_ACTIONS = ["skipped", "watched", "dove", "bought"]
+
+
+def _alert_outcome(a: Alert) -> Optional[dict[str, Any]]:
+    if a.forward_return_7d is None and a.forward_return_30d is None \
+            and a.forward_return_90d is None:
+        return None
+    return {
+        "forward_return_7d": a.forward_return_7d,
+        "forward_return_30d": a.forward_return_30d,
+        "forward_return_90d": a.forward_return_90d,
+        "max_drawdown": a.max_drawdown,
+    }
+
+
+def _fallback_memo(a: Alert) -> dict[str, Any]:
+    """Build a best-effort memo for an alert recorded before memos were stored."""
+    lane_name = "—"
+    if a.lane_id:
+        try:
+            from shared.lanes import get_lane
+            lane_name = get_lane(a.lane_id).name
+        except Exception:
+            lane_name = a.lane_id
+    thesis = {
+        "lane_id": a.lane_id, "megatrend": "—", "bottleneck": "—",
+        "exposure": "—", "why_now": a.why_now or "n/a", "evidence": [],
+        "catalyst_type": None, "catalyst_date": None,
+    }
+    axes = {"opportunity": a.opportunity_score, "risk": a.risk_score,
+            "timing": a.timing_score, "confidence": None, "tradability": None}
+    return build_memo(
+        ticker=a.ticker, company=None, lane_name=lane_name, bucket=a.bucket,
+        thesis=thesis, axes=axes, red_flags=[], mechanics={},
+    )
 
 
 class OutcomeUpdate(BaseModel):
@@ -71,6 +106,22 @@ async def list_alerts(
         q = q.where(Alert.bucket == bucket)
     rows = (await session.exec(q)).all()
     return {"count": len(rows), "alerts": [_alert_dict(a) for a in rows]}
+
+
+@router.get("/alerts/{alert_id}/memo", dependencies=[Depends(require_api_key)])
+async def alert_memo(alert_id: str, session: AsyncSession = Depends(get_session)):
+    """One-page memo for an alert (S13). Returns the memo stored at alert time
+    (faithful point-in-time artifact), falling back to a best-effort build for
+    older alerts. The realized outcome is always overlaid from the live row."""
+    alert = (await session.exec(select(Alert).where(Alert.id == alert_id))).first()
+    if not alert:
+        raise HTTPException(404, f"alert {alert_id} not found")
+
+    memo = (alert.payload or {}).get("memo") or _fallback_memo(alert)
+    outcome = _alert_outcome(alert)
+    if outcome:
+        memo["outcome"] = outcome
+    return {"alert_id": alert.id, "memo": memo, "rendered": render_memo_markdown(memo)}
 
 
 @router.post("/alerts/{alert_id}/outcome")

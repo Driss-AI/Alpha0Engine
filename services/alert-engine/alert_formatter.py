@@ -35,12 +35,15 @@ def format_alert(
     bucket: str,
     red_flags: list[str],
     mechanics: Optional[dict[str, Any]] = None,
+    memo_summary: Optional[list[str]] = None,
 ) -> str:
     """Render the mandatory Telegram alert template as plain text.
 
     thesis: dict from Thesis.to_dict() (megatrend, bottleneck, exposure, evidence,
             why_now, catalyst_type, catalyst_date)
     axes:   {opportunity, risk, timing, confidence, tradability}
+    memo_summary: optional 2-line memo highlight (S13.3 — invalidation + first
+            manual check); the full memo lives at /api/v1/alerts/{id}/memo.
     """
     mechanics = mechanics or {}
     lines: list[str] = []
@@ -92,6 +95,13 @@ def format_alert(
     )
     lines.append(f"Red flags: {', '.join(red_flags) if red_flags else 'none critical'}")
     lines.append(f"Why now: {thesis.get('why_now', '—')}")
+
+    # Memo highlight (S13.3) — keep it to the two lines that matter most.
+    if memo_summary:
+        lines.append("")
+        for ml in memo_summary[:2]:
+            lines.append(ml)
+
     lines.append("")
     lines.append(f"Action: {bucket_label(bucket)} — do not buy blind")
 

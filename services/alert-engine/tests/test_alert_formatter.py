@@ -35,6 +35,20 @@ def test_template_has_all_mandatory_fields():
         assert required in msg, f"missing mandatory field: {required}"
 
 
+def test_memo_summary_embedded():
+    """Sprint 13.3: the memo highlight (invalidation + first check) is embedded."""
+    msg = format_alert(
+        ticker="BE", company="Bloom Energy", lane_name="AI Infrastructure",
+        thesis=THESIS, axes=AXES, bucket="SETUP_READY", red_flags=[],
+        mechanics={"short_pct_float": 0.25, "volume_ratio": 2.3},
+        memo_summary=["Would invalidate: catalyst slips", "Check first: float on a 2nd source"],
+    )
+    assert "Would invalidate: catalyst slips" in msg
+    assert "Check first: float on a 2nd source" in msg
+    # summary sits above the action line
+    assert msg.index("Would invalidate:") < msg.index("Action:")
+
+
 def test_evidence_urls_present():
     msg = format_alert(
         ticker="BE", company="Bloom Energy", lane_name="AI Infrastructure",
