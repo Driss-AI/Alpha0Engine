@@ -14,19 +14,15 @@ load_dotenv()
 # Import every SQLModel table so metadata.tables is fully populated
 from shared.schemas.entities import Entity  # noqa: F401
 from shared.schemas.signals import Signal  # noqa: F401
-from shared.schemas.themes import Theme, ThemeEntity  # noqa: F401
 from shared.schemas.fundamentals import FundamentalScore  # noqa: F401
 from shared.schemas.equity_screen import EquityScreen  # noqa: F401
 from shared.schemas.risk import RiskAssessment  # noqa: F401
 from shared.schemas.daily_prices import DailyPrice  # noqa: F401
-from shared.schemas.embeddings import Embedding  # noqa: F401
 from shared.schemas.pipeline_health import PipelineHealth  # noqa: F401
 from shared.schemas.watchlist import UserWatchlist  # noqa: F401
 from shared.schemas.ticker_timeline import TickerTimeline  # noqa: F401
 from shared.schemas.score_snapshot import ScoreSnapshot  # noqa: F401
 from shared.schemas.catalyst_event import CatalystEvent  # noqa: F401
-from shared.schemas.brain_opportunity import BrainOpportunity  # noqa: F401
-from shared.schemas.brain_narrative import BrainNarrative  # noqa: F401
 from shared.schemas.company_news import CompanyNews  # noqa: F401
 from shared.schemas.ingestion_run import IngestionRun  # noqa: F401
 

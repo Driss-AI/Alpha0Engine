@@ -28,11 +28,7 @@ from middleware.rate_limit import setup_rate_limiting
 from routers import (
     health,
     entities,
-    signals,
-    themes,
-    ipo,
     dashboard,
-    fundamentals,
     risk,
     screener_1000x,
     prices,
@@ -41,7 +37,6 @@ from routers import (
     deep_dive,
     deltas,
     catalysts,
-    brain,
     metrics,
     data_freshness,
     alerts,
@@ -155,10 +150,6 @@ _viewer = [Depends(require_api_key)]
 
 app.include_router(dashboard.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(entities.router, prefix="/api/v1", dependencies=_viewer)
-app.include_router(signals.router, prefix="/api/v1", dependencies=_viewer)
-app.include_router(themes.router, prefix="/api/v1", dependencies=_viewer)
-app.include_router(ipo.router, prefix="/api/v1", dependencies=_viewer)
-app.include_router(fundamentals.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(risk.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(deep_dive.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(deltas.router, prefix="/api/v1", dependencies=_viewer)
@@ -170,4 +161,3 @@ app.include_router(catalysts.router, prefix="/api/v1", dependencies=_viewer)
 app.include_router(data_freshness.router, prefix="/api/v1", dependencies=_viewer)
 # alerts router declares its own per-route auth (viewer GETs, admin POST)
 app.include_router(alerts.router, prefix="/api/v1")
-app.include_router(brain.router, prefix="/api/v1", dependencies=_viewer)

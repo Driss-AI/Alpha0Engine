@@ -10,13 +10,10 @@ API_KEY = "test-secret-key-12345"
 
 VIEWER_ENDPOINTS = [
     ("GET", "/api/v1/entities"),
-    ("GET", "/api/v1/signals"),
     ("GET", "/api/v1/watchlist"),
     ("GET", "/api/v1/catalysts"),
     ("GET", "/api/v1/1000x/deltas"),
     ("GET", "/api/v1/1000x/movers"),
-    ("GET", "/api/v1/brain/picks"),
-    ("GET", "/api/v1/brain/stats"),
 ]
 
 ADMIN_ENDPOINTS = [
@@ -25,10 +22,6 @@ ADMIN_ENDPOINTS = [
         "ticker": "MRNA", "catalyst_type": "fda", "title": "test", "status": "upcoming",
     }),
     ("POST", "/api/v1/entities", {"name": "Test Corp"}),
-    ("POST", "/api/v1/signals", {
-        "entity_id": "ent-1", "signal_type": "news_mention",
-        "signal_date": "2026-01-01T00:00:00", "source": "manual",
-    }),
 ]
 
 

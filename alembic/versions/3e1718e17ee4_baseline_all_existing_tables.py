@@ -14,12 +14,10 @@ from sqlmodel import SQLModel
 # Ensure all table models are registered on SQLModel.metadata
 import shared.schemas.entities  # noqa: F401
 import shared.schemas.signals  # noqa: F401
-import shared.schemas.themes  # noqa: F401
 import shared.schemas.fundamentals  # noqa: F401
 import shared.schemas.equity_screen  # noqa: F401
 import shared.schemas.risk  # noqa: F401
 import shared.schemas.daily_prices  # noqa: F401
-import shared.schemas.embeddings  # noqa: F401
 import shared.schemas.pipeline_health  # noqa: F401
 import shared.schemas.watchlist  # noqa: F401
 import shared.schemas.ticker_timeline  # noqa: F401

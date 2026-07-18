@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        image: postgres:16
         env:
           POSTGRES_DB: alpha_engine_test
           POSTGRES_USER: postgres
@@ -42,31 +42,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports: ["5432:5432"]
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r services/api/requirements.txt pytest pytest-asyncio httpx
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx
       - name: Run tests
         env:
           DATABASE_URL: postgresql://postgres:password@localhost:5432/alpha_engine_test
-          REDIS_URL: redis://localhost:6379/0
           API_SECRET_KEY: test-secret
           ENVIRONMENT: test
         run: pytest services/api/tests/ -v --tb=short
-
-  test-edgar:
-    name: Test EDGAR Parser
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r services/ingest-edgar/requirements.txt pytest
-      - run: pytest services/ingest-edgar/tests/ -v --tb=short

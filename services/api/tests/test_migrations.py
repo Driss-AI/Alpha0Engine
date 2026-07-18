@@ -55,11 +55,11 @@ def test_no_orphan_revisions():
 
 
 def test_head_matches_expected():
-    """Current head should be the Sprint 11 migration."""
+    """Current head should be the restructure drop-tables migration."""
     cfg = _get_alembic_config()
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
-    assert "c7e9f1a3b5d2" in heads, f"Expected head c7e9f1a3b5d2 (S11 market context), got {heads}"
+    assert "a9d2c4e6f8b1" in heads, f"Expected head a9d2c4e6f8b1 (restructure drop), got {heads}"
 
 
 def test_all_revisions_have_upgrade_and_downgrade():

@@ -130,38 +130,6 @@ class SmartMoneyTracker:
 
         return filings
 
-    def process_13f_filing(self, filing: Dict[str, Any]) -> None:
-        """Process a 13F filing and write crossover_filing signals."""
-        try:
-            import asyncio
-            from shared.clients.postgres import AsyncSessionLocal
-            from shared.schemas.signals import Signal
-            import uuid
-
-            signal = Signal(
-                id=str(uuid.uuid4()),
-                entity_id="UNRESOLVED",
-                signal_type="crossover_filing",
-                signal_date=datetime.strptime(
-                    filing.get("file_date") or datetime.utcnow().strftime("%Y-%m-%d"),
-                    "%Y-%m-%d"
-                ),
-                value=0.7,  # 13F filing = strong institutional interest
-                raw_data=filing,
-                source="sec_13f",
-                source_id=filing.get("accession"),
-                notes=f"13F: {filing['fund_name']}",
-            )
-
-            async def _w():
-                async with AsyncSessionLocal() as s:
-                    s.add(signal)
-                    await s.commit()
-
-            asyncio.get_event_loop().run_until_complete(_w())
-        except Exception as e:
-            log.error(f"Failed to write 13F signal: {e}")
-
     async def emit_institutional_accumulation(
         self,
         *,
@@ -201,76 +169,6 @@ class SmartMoneyTracker:
             source_id=f"accum-{accession}-{entity_id}",
             notes=f"13F accumulation: {fund_name} holds {ticker or holding.get('issuer_name')}",
         )
-        async with AsyncSessionLocal() as s:
-            s.add(signal)
-            await s.commit()
-
-    async def detect_crossover_investments(self) -> List[Dict[str, Any]]:
-        """Cross-reference: find tracked fund names in Form D related_persons."""
-        from shared.clients.postgres import AsyncSessionLocal
-        from shared.schemas.signals import Signal
-        from sqlmodel import select
-
-        crossovers = []
-        async with AsyncSessionLocal() as session:
-            # Get recent Form D filings
-            result = await session.exec(
-                select(Signal)
-                .where(Signal.signal_type == "form_d")
-                .where(Signal.signal_date >= datetime.utcnow() - timedelta(days=90))
-                .limit(1000)
-            )
-            form_d_signals = result.all()
-
-        for sig in form_d_signals:
-            rd = sig.raw_data or {}
-            persons = rd.get("related_persons", [])
-            company = rd.get("company_name", "")
-
-            for person in persons:
-                person_name = (person.get("name", "") or "").upper()
-                for fund_name in self.tracked_funds:
-                    # Check if any tracked fund name appears in related persons
-                    fund_words = fund_name.split()[:2]
-                    if all(w in person_name for w in fund_words):
-                        crossover = {
-                            "fund": fund_name,
-                            "company": company,
-                            "entity_id": sig.entity_id,
-                            "form_d_date": str(sig.signal_date),
-                            "offering_amount": rd.get("total_offering_amount"),
-                        }
-                        crossovers.append(crossover)
-                        log.info(f"CROSSOVER DETECTED: {fund_name} -> {company}")
-
-                        # Write high-value signal
-                        await self._write_crossover_signal(sig, fund_name)
-
-        return crossovers
-
-    async def _write_crossover_signal(self, form_d_signal, fund_name: str) -> None:
-        """Write a high-value crossover investment signal."""
-        from shared.clients.postgres import AsyncSessionLocal
-        from shared.schemas.signals import Signal
-        import uuid
-
-        signal = Signal(
-            id=str(uuid.uuid4()),
-            entity_id=form_d_signal.entity_id,
-            signal_type="crossover_filing",
-            signal_date=datetime.utcnow(),
-            value=0.9,  # Crossover = strongest pre-IPO signal
-            raw_data={
-                "fund": fund_name,
-                "company": (form_d_signal.raw_data or {}).get("company_name"),
-                "form_d_accession": form_d_signal.source_id,
-                "offering_amount": (form_d_signal.raw_data or {}).get("total_offering_amount"),
-            },
-            source="sec_13f",
-            source_id=f"crossover-{form_d_signal.source_id}-{fund_name}",
-            notes=f"CROSSOVER: {fund_name} invested in private company",
-        )
-
         async with AsyncSessionLocal() as s:
             s.add(signal)
             await s.commit()

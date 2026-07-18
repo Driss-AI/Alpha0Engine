@@ -26,7 +26,6 @@ from shared.schemas.fundamentals import FundamentalScore
 
 from moat_scorer import compute_moat_score
 from public_screener import screen_public_equity
-from private_proxy import screen_private_company
 from scoring_engine import compute_fundamental_score
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s | %(name)s | %(message)s")
@@ -82,19 +81,15 @@ async def score_entity(session: AsyncSession, entity: Entity, sector_avg: float)
 
     # ── Step 2: Financial Metrics ───────────────────────────
     public_metrics = None
-    private_metrics = None
-
-    if entity.entity_type == "public" and entity.cik:
+    if entity.cik:
         public_metrics = await screen_public_equity(entity.cik)
-    else:
-        private_metrics = screen_private_company(signals)
 
     # ── Step 3: Composite Score ─────────────────────────────
     composite = compute_fundamental_score(
         moat=moat,
         public_metrics=public_metrics,
-        private_metrics=private_metrics,
-        entity_type=entity.entity_type or "private",
+        private_metrics=None,
+        entity_type="public",
     )
 
     # ── Step 4: Build FundamentalScore record ───────────────
@@ -133,14 +128,6 @@ async def score_entity(session: AsyncSession, entity: Entity, sector_avg: float)
             if public_metrics.get("rd_expense") and public_metrics.get("market_cap_usd"):
                 existing.rd_to_mktcap = public_metrics["rd_expense"] / public_metrics["market_cap_usd"]
 
-        if private_metrics:
-            existing.last_round_valuation = private_metrics.get("last_round_valuation")
-            existing.secondary_vs_primary = private_metrics.get("secondary_vs_primary")
-            existing.estimated_burn_rate = private_metrics.get("estimated_burn_rate")
-            existing.estimated_runway_months = private_metrics.get("estimated_runway_months")
-            existing.total_raised = private_metrics.get("total_raised")
-            existing.form_d_total = private_metrics.get("form_d_count")
-
         session.add(existing)
         return existing
 
@@ -175,14 +162,6 @@ async def score_entity(session: AsyncSession, entity: Entity, sector_avg: float)
         if public_metrics.get("rd_expense") and public_metrics.get("market_cap_usd"):
             score_record.rd_to_mktcap = public_metrics["rd_expense"] / public_metrics["market_cap_usd"]
 
-    if private_metrics:
-        score_record.last_round_valuation = private_metrics.get("last_round_valuation")
-        score_record.secondary_vs_primary = private_metrics.get("secondary_vs_primary")
-        score_record.estimated_burn_rate = private_metrics.get("estimated_burn_rate")
-        score_record.estimated_runway_months = private_metrics.get("estimated_runway_months")
-        score_record.total_raised = private_metrics.get("total_raised")
-        score_record.form_d_total = private_metrics.get("form_d_count")
-
     session.add(score_record)
     return score_record
 
@@ -196,7 +175,9 @@ async def run_screening_batch():
     await create_db_and_tables()
 
     async with AsyncSessionLocal() as session:
-        entities = (await session.exec(select(Entity).limit(1000))).all()
+        entities = (await session.exec(
+            select(Entity).where(Entity.entity_type == "public").limit(1000)
+        )).all()
         logger.info(f"Found {len(entities)} entities to screen")
 
         if not entities:
