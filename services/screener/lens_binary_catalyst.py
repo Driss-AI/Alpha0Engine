@@ -10,8 +10,7 @@ Score = catalyst_proximity × inverse_market_cap × cash_runway_factor
 Data sources:
   - SEC EDGAR XBRL (market cap, cash, burn rate)
   - SEC 8-K/10-K filings (catalyst mentions via NLP)
-  - USPTO patent grants (patent catalysts)
-  - Existing signals table (crossover_filing, patent_grant, etc.)
+  - Existing signals table (fda_catalyst, clinical_trial, 8-K categories)
 """
 import logging
 from typing import Dict, Any, Optional, List
@@ -24,13 +23,18 @@ CATALYST_WEIGHTS = {
     "fda_approval": 1.0,
     "fda_pdufa": 0.95,
     "fda_adcom": 0.85,
-    "patent_grant": 0.70,
     "patent_litigation_ruling": 0.80,
     "merger_acquisition": 0.90,
     "contract_award": 0.65,
     "regulatory_approval": 0.75,
     "clinical_trial_data": 0.90,
     "partnership_announcement": 0.50,
+    # L1 AI-infra 8-K categories — demand confirmations with a dated phase-in;
+    # binary-ish but less all-or-nothing than an FDA decision.
+    "hyperscaler_contract": 0.70,
+    "ppa_signed": 0.65,
+    "gpu_order": 0.60,
+    "data_center_lease": 0.55,
 }
 
 # ── Market cap tiers for inverse scaling ────────────────────
@@ -102,16 +106,21 @@ def detect_catalysts_from_signals(signals: List[Dict[str, Any]]) -> List[Dict[st
     Maps signal types to catalyst categories.
     """
     catalyst_map = {
-        "patent_grant": "patent_grant",
-        "patent_filing": "patent_grant",
-        "crossover_filing": "regulatory_approval",
-        "form_d": "partnership_announcement",
         "clinical_trial": "clinical_trial_data",
         "fda_catalyst": "fda_approval",
         "8k_event": "regulatory_approval",  # Overridden by keyword detection below
-        "sec_13f": None,  # Not a catalyst
-        "github_star": None,
-        "github_commit": None,
+        # The 8-K scanner writes its classified category AS the signal_type —
+        # map every category the classifier can emit, or those catalysts are
+        # invisible to this lens (found by the catch-rate suite).
+        "fda_approval": "fda_approval",
+        "clinical_trial_data": "clinical_trial_data",
+        "merger_acquisition": "merger_acquisition",
+        "contract_award": "contract_award",
+        "partnership": "partnership_announcement",
+        "hyperscaler_contract": "hyperscaler_contract",
+        "ppa_signed": "ppa_signed",
+        "data_center_lease": "data_center_lease",
+        "gpu_order": "gpu_order",
     }
 
     catalysts = []

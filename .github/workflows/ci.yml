@@ -26,6 +26,30 @@ jobs:
       - name: Pipeline dry-run
         run: python scripts/run_daily_pipeline.py --dry-run
 
+  test-workers:
+    name: Test Workers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt pytest pytest-asyncio
+      - name: Run worker test suites (sqlite)
+        env:
+          DATABASE_URL: sqlite+aiosqlite://
+        run: |
+          set -e
+          for d in services/*/tests; do
+            svc=$(dirname "$d")
+            [ "$svc" = "services/api" ] && continue
+            echo "== $svc"
+            (cd "$svc" && python -m pytest tests/ -q --tb=short)
+          done
+      - name: Catch-rate scoreboard (must be clean)
+        run: python scripts/catch_rate.py
+
   test-api:
     name: Test API
     runs-on: ubuntu-latest

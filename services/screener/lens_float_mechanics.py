@@ -214,6 +214,21 @@ def estimate_short_from_signals(signals: list) -> tuple:
     return short_interest, None
 
 
+def latest_float_snapshot(signals: list) -> Dict[str, Any]:
+    """Real float/short data from the newest `float_snapshot` signal
+    (written daily by ingest-prices from yfinance). {} when none exists."""
+    best: Dict[str, Any] = {}
+    best_date = ""
+    for sig in signals:
+        if sig.get("signal_type") != "float_snapshot":
+            continue
+        date = sig.get("signal_date") or ""
+        if date >= best_date:
+            best_date = date
+            best = sig.get("raw_data") or {}
+    return best
+
+
 async def score_float_mechanics(
     ticker: Optional[str],
     cik: Optional[str],
@@ -230,28 +245,35 @@ async def score_float_mechanics(
         days_to_cover
         float_details
     """
-    # Get shares outstanding
+    # Real data first: the daily float_snapshot signal (yfinance via
+    # ingest-prices) carries actual float, short interest, and days-to-cover.
+    snap = latest_float_snapshot(signals)
+    float_shares = snap.get("float_shares")
+    short_interest = snap.get("short_interest")
+    short_pct = snap.get("short_pct_float")
+    days_to_cover = snap.get("days_to_cover")
+    if shares_outstanding is None:
+        shares_outstanding = snap.get("shares_outstanding")
+
+    # Fallbacks: EDGAR shares outstanding + insider-holdings estimation.
     if shares_outstanding is None and cik:
         shares_outstanding = await fetch_shares_outstanding(cik)
-
-    # Estimate float
-    float_shares = estimate_float_from_signals(shares_outstanding, signals)
-
-    # Get short interest
-    short_interest, short_pct = estimate_short_from_signals(signals)
-    if ticker and short_interest is None:
+    if float_shares is None:
+        float_shares = estimate_float_from_signals(shares_outstanding, signals)
+    if short_interest is None and short_pct is None:
+        short_interest, short_pct = estimate_short_from_signals(signals)
+    if short_interest is None and ticker:
         finra_data = await fetch_finra_short_interest(ticker)
         if finra_data:
             short_interest = finra_data.get("short_interest")
-            short_pct = finra_data.get("short_pct_float")
+            short_pct = short_pct or finra_data.get("short_pct_float")
 
     # Compute short_pct_float if we have both
     if short_pct is None and short_interest and float_shares and float_shares > 0:
         short_pct = short_interest / float_shares
 
-    # Estimate days to cover (need volume data — use signal frequency as proxy)
-    days_to_cover = None
-    if short_interest and float_shares:
+    # Days to cover: estimate only when the snapshot didn't provide it
+    if days_to_cover is None and short_interest and float_shares:
         # Rough estimate: avg daily volume ≈ 1-3% of float for micro-caps
         estimated_daily_vol = float_shares * 0.015
         if estimated_daily_vol > 0:

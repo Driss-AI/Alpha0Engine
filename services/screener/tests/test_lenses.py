@@ -34,6 +34,8 @@ from lens_float_mechanics import (
     _score_float_size,
     _score_short_interest,
     _compute_squeeze_potential,
+    latest_float_snapshot,
+    score_float_mechanics,
 )
 from lens_smart_money import (
     _score_institutional_buying,
@@ -90,7 +92,7 @@ class TestBinaryCatalyst:
         """Should detect FDA keywords in signal notes."""
         signals = [
             {
-                "signal_type": "crossover_filing",
+                "signal_type": "8k_event",
                 "notes": "Company filed NDA with FDA for drug approval",
                 "raw_data": {},
                 "signal_date": "2026-03-01",
@@ -104,7 +106,7 @@ class TestBinaryCatalyst:
         """SPRB-like setup: micro-cap + FDA catalyst + long runway."""
         signals = [
             {
-                "signal_type": "crossover_filing",
+                "signal_type": "8k_event",
                 "notes": "PDUFA date approaching for FDA approval",
                 "raw_data": {},
                 "signal_date": "2026-04-01",
@@ -355,6 +357,43 @@ class TestFloatMechanics:
         """No short interest = no squeeze."""
         squeeze = _compute_squeeze_potential(0.9, 0.0, 0.5)
         assert squeeze == 0.0
+
+    def test_latest_float_snapshot_picks_newest(self):
+        signals = [
+            {"signal_type": "float_snapshot", "signal_date": "2026-07-01",
+             "raw_data": {"float_shares": 9_000_000}},
+            {"signal_type": "float_snapshot", "signal_date": "2026-07-15",
+             "raw_data": {"float_shares": 4_000_000}},
+            {"signal_type": "news_mention", "signal_date": "2026-07-16",
+             "raw_data": {"float_shares": 999}},
+        ]
+        assert latest_float_snapshot(signals)["float_shares"] == 4_000_000
+
+    def test_latest_float_snapshot_empty(self):
+        assert latest_float_snapshot([{"signal_type": "news_mention"}]) == {}
+
+    def test_snapshot_drives_score(self):
+        """Real yfinance snapshot data must be used verbatim — tight float,
+        heavy short interest, real days-to-cover — no EDGAR fallback."""
+        import asyncio
+        signals = [{
+            "signal_type": "float_snapshot", "signal_date": "2026-07-15",
+            "raw_data": {
+                "float_shares": 3_000_000,
+                "short_interest": 900_000,
+                "short_pct_float": 0.30,
+                "days_to_cover": 8.0,
+                "shares_outstanding": 12_000_000,
+            },
+        }]
+        result = asyncio.run(score_float_mechanics(
+            ticker="TEST", cik=None, signals=signals,
+        ))
+        assert result["float_shares"] == 3_000_000
+        assert result["short_pct_float"] == 0.30
+        assert result["days_to_cover"] == 8.0
+        assert result["float_category"] == "nano"
+        assert result["float_score"] > 0.7
 
 
 # ═══════════════════════════════════════════════════════════

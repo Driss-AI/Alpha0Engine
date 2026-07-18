@@ -28,8 +28,16 @@ MEGATRENDS = {
             "computer vision", "natural language processing", "ai inference",
             "gpu computing", "ai accelerator", "transformer model",
             "foundation model", "autonomous", "robotics",
+            # AI *infrastructure* vocabulary (aligned with the L1 lane) — the
+            # exposed companies are often power/industrial names, not software
+            # (gap found by the catch-rate suite).
+            "ai infrastructure", "data center", "datacenter", "hyperscaler",
+            "hyperscale", "colocation", "gpu cloud", "gpu hosting",
+            "power purchase agreement", "ai training cluster",
+            "accelerated computing", "liquid cooling", "high bandwidth memory",
         ],
-        "sectors": ["technology", "software", "semiconductors", "cloud"],
+        "sectors": ["technology", "software", "semiconductors", "cloud",
+                    "industrials", "utilities", "energy"],
         "weight": 1.0,  # Hottest trend
     },
     "defense_security": {
@@ -74,6 +82,13 @@ MEGATRENDS = {
             "precision medicine", "genomics", "proteomics",
             "immuno-oncology", "car-t", "antibody drug conjugate",
             "bispecific", "radiopharmaceutical", "glp-1",
+            # Regulatory / binary-event vocabulary — how catalyst-driven
+            # biotechs actually describe themselves (gap found by the
+            # catch-rate suite).
+            "clinical-stage", "clinical stage", "biopharmaceutical",
+            "phase 3", "pivotal trial", "primary endpoint", "topline",
+            "nda", "bla", "pdufa", "priority review", "orphan drug",
+            "fda approval",
         ],
         "sectors": ["biotech", "pharma", "healthcare"],
         "weight": 0.85,
@@ -92,9 +107,10 @@ def _match_megatrend_keywords(text: str) -> Dict[str, float]:
     for trend_name, trend_def in MEGATRENDS.items():
         matched = [kw for kw in trend_def["keywords"] if kw in text_lower]
         if matched:
-            # Score: weighted by number of unique matches, capped at 1.0
-            density = len(matched) / len(trend_def["keywords"])
-            relevance = min(density * 3.0, 1.0)  # 33% keyword match = max
+            # Absolute match count, NOT density — density punished trends with
+            # richer vocabularies (growing a keyword list silently lowered every
+            # score). 5 distinct keyword hits = maximum relevance.
+            relevance = min(len(matched) / 5.0, 1.0)
             results[trend_name] = round(relevance * trend_def["weight"], 4)
 
     return results

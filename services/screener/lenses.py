@@ -87,6 +87,32 @@ async def load_active_market_context(session: AsyncSession) -> list[dict]:
     ]
 
 
+async def load_catalyst_priority_entities(
+    session: AsyncSession,
+    horizon_days: int = 120,
+) -> set[str]:
+    """Entity ids with an upcoming dated catalyst within the horizon.
+
+    The catalyst calendar (catalyst_events, fed by the trials/FDA/8-K
+    ingesters) is the spine of the SPRB pattern: a candidate without a dated
+    event can wait; one with a PDUFA date in 6 weeks cannot.
+    """
+    from datetime import date, timedelta as _td
+    from shared.schemas.catalyst_event import CatalystEvent
+
+    today = date.today()
+    rows = (await session.exec(
+        select(CatalystEvent.entity_id).where(
+            CatalystEvent.status == "upcoming",
+            CatalystEvent.expected_date.isnot(None),  # type: ignore[union-attr]
+            CatalystEvent.expected_date >= today,
+            CatalystEvent.expected_date <= today + _td(days=horizon_days),
+            CatalystEvent.entity_id.isnot(None),  # type: ignore[union-attr]
+        )
+    )).all()
+    return {r for r in rows if r}
+
+
 async def get_fundamental_data(session: AsyncSession, entity_id: str) -> dict:
     """Get existing fundamental score data for the entity."""
     result = await session.exec(
@@ -411,6 +437,22 @@ async def run_screening_batch():
         if not entities:
             logger.info("No public entities found. Exiting.")
             return
+
+        # Calendar inversion (RESTRUCTURE.md §3.1): entities with a dated
+        # upcoming catalyst are scored FIRST, so the names that can actually
+        # move on an event always get fresh scores even if the batch is cut
+        # short by rate limits or the step timeout.
+        priority_ids = await load_catalyst_priority_entities(session)
+        if priority_ids:
+            entities = sorted(
+                entities,
+                key=lambda e: (e.id not in priority_ids),  # False (priority) sorts first
+            )
+            n_priority = sum(1 for e in entities if e.id in priority_ids)
+            logger.info(
+                f"Catalyst calendar: {n_priority} entities with upcoming dated "
+                f"catalysts scored first"
+            )
 
         # S11.3: load active market-wide context once; feeds the demand lens.
         market_context = await load_active_market_context(session)
