@@ -20,9 +20,9 @@ CASES = [
     # ── Winners ─────────────────────────────────────────────────────────────
 
     Case(
-        case_id="SERB_CLASS_PDUFA",
-        ticker="SERB",
-        company="SERB-class micro-cap biotech",
+        case_id="SPRB_PDUFA",
+        ticker="SPRB",
+        company="SPRB-class micro-cap biotech (Spruce-pattern FDA play)",
         lane_id="L2_BIOTECH",
         sector="Healthcare",
         description=(

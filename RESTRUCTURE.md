@@ -1,7 +1,7 @@
 # Alpha0Engine Restructure Plan
 
 **Goal restated (July 2026):** catch catalyst-driven micro-cap explosions — the
-SPRB/SERB pattern: cheap public stocks (<$15) with a dated binary catalyst, tiny
+SPRB pattern: cheap public stocks (<$15) with a dated binary catalyst, tiny
 float, and enough cash to reach the event, that can re-rate 10x–200x. Private
 companies and IPO proximity are explicitly **not** the priority anymore.
 
@@ -97,7 +97,7 @@ This alone deletes ~17 Dockerfiles, most of docker-compose.yml, and the whole
    (cap-vs-market-if-win × catalyst proximity × cash runway × float), not a
    weighted average of trend axes.
 4. **Retrospective catch-rate suite.** Reconstruct what was publicly knowable
-   30/60/90 days before SPRB/SERB-class moves (10–20 cases) and assert the
+   30/60/90 days before SPRB-class moves (10–20 cases) and assert the
    engine surfaces them at DEEP_DIVE+. This becomes the regression test for the
    whole product.
 

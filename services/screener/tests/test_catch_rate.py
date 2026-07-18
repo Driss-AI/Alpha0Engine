@@ -12,14 +12,14 @@ from catch_rate_cases import CASES
 CASES_BY_ID = {c.case_id: c for c in CASES}
 
 
-def test_serb_class_pdufa_caught_at_every_horizon():
-    """The SERB-class PDUFA setup — the product's reason to exist — must be
+def test_sprb_pdufa_caught_at_every_horizon():
+    """The SPRB-class PDUFA setup — the product's reason to exist — must be
     DEEP_DIVE+ at 90, 60, and 30 days out."""
-    case = CASES_BY_ID["SERB_CLASS_PDUFA"]
+    case = CASES_BY_ID["SPRB_PDUFA"]
     for asof in case.asof:
         r = score_asof(case, asof)
         assert r["caught"], (
-            f"missed SERB-class setup at T-{asof.days_before}d: "
+            f"missed SPRB-class setup at T-{asof.days_before}d: "
             f"bucket={r['bucket']} composite={r['composite_score']}"
         )
 

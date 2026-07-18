@@ -17,7 +17,7 @@ this harness feeds raw signal-shaped inputs so every lens, red flag, axis and
 bucket rule is exercised for real.
 
 Case data honesty: the shipped cases are ARCHETYPE RECONSTRUCTIONS — the
-shape of documented setups (SERB-class PDUFA plays, low-float squeezes,
+shape of documented setups (SPRB-class PDUFA plays, low-float squeezes,
 pump-shells) with representative numbers, NOT verified as-of-date market
 data. Each case says so in `provenance`. Replace with verified numbers as
 they are researched; the harness doesn't care where the facts come from.
