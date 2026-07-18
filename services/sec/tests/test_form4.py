@@ -189,7 +189,7 @@ class TestForm4Parser:
 # ═══════════════════════════════════════════════════════════
 class TestSignalValue:
     def test_large_buy_officer(self):
-        from main import _compute_signal_value
+        from form4_parser import compute_signal_value as _compute_signal_value
         parsed = {
             "buy_count": 1, "sell_count": 0,
             "total_buy_value": 600_000, "total_sell_value": 0,
@@ -200,7 +200,7 @@ class TestSignalValue:
         assert value >= 0.8
 
     def test_small_buy(self):
-        from main import _compute_signal_value
+        from form4_parser import compute_signal_value as _compute_signal_value
         parsed = {
             "buy_count": 1, "sell_count": 0,
             "total_buy_value": 10_000, "total_sell_value": 0,
@@ -211,7 +211,7 @@ class TestSignalValue:
         assert 0.6 <= value <= 0.75
 
     def test_pure_sell(self):
-        from main import _compute_signal_value
+        from form4_parser import compute_signal_value as _compute_signal_value
         parsed = {
             "buy_count": 0, "sell_count": 1,
             "total_buy_value": 0, "total_sell_value": 500_000,
@@ -222,7 +222,7 @@ class TestSignalValue:
         assert value == 0.25  # Mildly bearish
 
     def test_net_buyer(self):
-        from main import _compute_signal_value
+        from form4_parser import compute_signal_value as _compute_signal_value
         parsed = {
             "buy_count": 2, "sell_count": 1,
             "total_buy_value": 100_000, "total_sell_value": 30_000,

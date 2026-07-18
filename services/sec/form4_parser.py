@@ -242,3 +242,46 @@ def parse_form4_xml(xml_text: str) -> Optional[Dict[str, Any]]:
         "has_open_market_buy": len(buys) > 0,
         "is_10b5_1": is_10b5_1,
     }
+
+
+def compute_signal_value(parsed: Dict[str, Any]) -> float:
+    """Signal value from transaction type and size.
+
+    Buys = bullish (positive), sells = bearish-ish. Cluster buys by
+    officers/directors = strongest signal.
+    """
+    if parsed["buy_count"] > 0 and parsed["sell_count"] == 0:
+        # Pure OPEN-MARKET buy — the strongest insider signal
+        base = 0.6
+        if parsed["total_buy_value"] > 100_000:
+            base = 0.75
+        if parsed["total_buy_value"] > 500_000:
+            base = 0.85
+        if parsed["total_buy_value"] > 1_000_000:
+            base = 0.90
+        if parsed["insider_relationship"] in ("Officer", "Director"):
+            base = min(base + 0.05, 0.95)
+        return base
+    elif parsed["sell_count"] > 0 and parsed["buy_count"] == 0:
+        # Pure sell — mildly bearish. 10b5-1 plan sales are pre-scheduled,
+        # so they carry even less signal.
+        return 0.35 if parsed.get("is_10b5_1") else 0.25
+    elif parsed["buy_count"] > 0 and parsed["sell_count"] > 0:
+        if parsed["net_value"] > 0:
+            return 0.55  # Net buyer
+        return 0.35  # Net seller
+    return 0.3  # Grants, exercises only — NOT a buy signal
+
+
+def insider_signal_type(parsed: Dict[str, Any]) -> str:
+    """Map a parsed Form 4 to a signal_type.
+
+    insider_buy_cluster   — open-market purchase(s), no sales (bullish)
+    insider_sell_cluster  — open-market sale(s), no buys (risk; feeds red flags)
+    form_4_insider        — mixed / grants / exercises (neutral, lens reads it)
+    """
+    if parsed["buy_count"] > 0 and parsed["sell_count"] == 0:
+        return "insider_buy_cluster"
+    if parsed["sell_count"] > 0 and parsed["buy_count"] == 0:
+        return "insider_sell_cluster"
+    return "form_4_insider"

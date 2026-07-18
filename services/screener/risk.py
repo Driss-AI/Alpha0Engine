@@ -6,7 +6,6 @@ Assesses hype, illiquidity, and composite risk for all entities.
 """
 import os
 import sys
-import asyncio
 import logging
 from datetime import datetime
 
@@ -26,7 +25,7 @@ from illiquidity_scorer import compute_illiquidity_risk
 from risk_engine import compute_risk_score
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s | %(name)s | %(message)s")
-logger = logging.getLogger("risk-filter")
+logger = logging.getLogger("screener.risk")
 
 BATCH_SIZE = 50
 
@@ -156,22 +155,3 @@ async def run_risk_batch():
 
     logger.info(f"RISK ASSESSMENT COMPLETE — {assessed} assessed, {errors} errors")
     logger.info(f"Tier breakdown: {tier_counts}")
-
-
-async def run_loop():
-    while True:
-        try:
-            await run_risk_batch()
-        except Exception as e:
-            logger.error(f"Risk batch failed: {e}")
-        logger.info("Next risk assessment in 24 hours...")
-        await asyncio.sleep(86400)
-
-
-if __name__ == "__main__":
-    mode = os.environ.get("RUN_MODE", "loop")
-    if mode == "once":
-        from shared.worker_runner import run_once_with_tracking
-        asyncio.run(run_once_with_tracking("risk-filter", run_risk_batch))
-    else:
-        asyncio.run(run_loop())

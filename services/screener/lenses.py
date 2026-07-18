@@ -40,8 +40,8 @@ from shared.services.snapshots import write_daily_snapshots
 
 from shared.logging import setup_logging, get_logger
 
-setup_logging("screener-1000x")
-logger = get_logger("screener-1000x")
+setup_logging("screener.lenses")
+logger = get_logger("screener.lenses")
 
 BATCH_SIZE = 25
 SEC_RATE_LIMIT_DELAY = 0.2  # SEC allows 10 req/sec
@@ -463,28 +463,3 @@ async def run_screening_batch():
     watchlist = tier_counts.get("CONVICTION", 0) + tier_counts.get("HIGH", 0)
     logger.info(f"Watchlist additions: {watchlist}")
     logger.info("=" * 60)
-
-
-async def run_loop():
-    """Run screening on a daily loop."""
-    import time as _time
-    from shared.clients.heartbeat import report_heartbeat
-    while True:
-        _start = _time.time()
-        try:
-            await run_screening_batch()
-            await report_heartbeat("screener-1000x", duration_seconds=_time.time()-_start, interval_hours=24)
-        except Exception as e:
-            logger.error(f"Screening batch failed: {e}")
-            await report_heartbeat("screener-1000x", error=str(e), interval_hours=24)
-        logger.info("Next 1000x screening run in 24 hours...")
-        await asyncio.sleep(86400)
-
-
-if __name__ == "__main__":
-    mode = os.environ.get("RUN_MODE", "loop")
-    if mode == "once":
-        from shared.worker_runner import run_once_with_tracking
-        asyncio.run(run_once_with_tracking("screener-1000x", run_screening_batch))
-    else:
-        asyncio.run(run_loop())

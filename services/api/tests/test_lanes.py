@@ -196,9 +196,9 @@ from dataclasses import dataclass
 
 
 def _load_lane_assignment():
-    """Load services/screener-1000x/lane_assignment.py by path (hyphenated dir)."""
+    """Load services/screener/lane_assignment.py by path."""
     path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "screener-1000x", "lane_assignment.py"
+        os.path.dirname(__file__), "..", "..", "screener", "lane_assignment.py"
     )
     spec = importlib.util.spec_from_file_location("lane_assignment", path)
     mod = importlib.util.module_from_spec(spec)

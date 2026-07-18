@@ -29,7 +29,7 @@ from public_screener import screen_public_equity
 from scoring_engine import compute_fundamental_score
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s | %(name)s | %(message)s")
-logger = logging.getLogger("fundamental-screener")
+logger = logging.getLogger("screener.fundamentals")
 
 BATCH_SIZE = 50
 
@@ -216,24 +216,3 @@ async def run_screening_batch():
     logger.info(f"SCREENING COMPLETE — {scored} scored, {errors} errors")
     logger.info(f"Tier breakdown: {tier_counts}")
     logger.info("=" * 60)
-
-
-async def run_loop():
-    """Run screening on a daily loop."""
-    while True:
-        try:
-            await run_screening_batch()
-        except Exception as e:
-            logger.error(f"Screening batch failed: {e}")
-        # Sleep 24 hours
-        logger.info("Next screening run in 24 hours...")
-        await asyncio.sleep(86400)
-
-
-if __name__ == "__main__":
-    mode = os.environ.get("RUN_MODE", "loop")
-    if mode == "once":
-        from shared.worker_runner import run_once_with_tracking
-        asyncio.run(run_once_with_tracking("fundamental-screener", run_screening_batch))
-    else:
-        asyncio.run(run_loop())

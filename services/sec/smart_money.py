@@ -13,7 +13,7 @@ Key detection:
 import os
 import logging
 import re
-import requests
+import httpx
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
@@ -91,8 +91,7 @@ class SmartMoneyTracker:
     def __init__(self, tracked_funds: Dict[str, str]):
         self.tracked_funds = tracked_funds
         self.user_agent = os.environ.get("EDGAR_USER_AGENT", "Alpha0Engine contact@alpha0engine.com")
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": self.user_agent})
+        self.session = httpx.Client(headers={"User-Agent": self.user_agent})
 
     def get_recent_13f_filings(self, days_back: int = 7) -> List[Dict[str, Any]]:
         """Search EDGAR for recent 13F-HR filings from tracked funds."""
