@@ -34,6 +34,8 @@ from shared.services.memo import build_memo, memo_summary_lines
 
 from alert_formatter import format_alert, build_dedupe_key
 import telegram_client
+import analyst
+from sentinel import run_sentinel
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
@@ -89,7 +91,10 @@ async def run_alert_dispatch():
     logger.info("=" * 60)
     logger.info("ALERT ENGINE — Starting dispatch run")
     logger.info(f"Telegram configured: {telegram_client.is_configured()}")
+    logger.info(f"Analyst configured: {analyst.is_configured()}")
     logger.info("=" * 60)
+
+    analyst.reset_run_budget()
 
     await create_db_and_tables()
 
@@ -164,6 +169,17 @@ async def run_alert_dispatch():
                 memo_summary=memo_summary_lines(memo),
             )
 
+            # Analyst take on every NEW discovery alert (capped per run; the
+            # deterministic memo above never depends on it).
+            take = analyst.analyst_take(analyst.build_dossier(
+                ticker=c.ticker, company=c.company_name, lane_name=lane_name,
+                bucket=c.bucket, thesis=thesis, axes=axes,
+                red_flags=red_flags, mechanics=mechanics,
+                catalysts=[catalyst] if catalyst else [],
+            ))
+            if take:
+                message = message + "\n\n" + "\n".join(analyst.format_take_lines(take))
+
             delivered = await telegram_client.send_message(message)
             session.add(Alert(
                 ticker=c.ticker, entity_id=c.entity_id, lane_id=lane_id, bucket=c.bucket,
@@ -172,7 +188,8 @@ async def run_alert_dispatch():
                 timing_score=c.timing_score, why_now=thesis.get("why_now"),
                 message=message, delivered=delivered,
                 payload={"dedupe_key": build_dedupe_key(c.ticker, lane_id, c.bucket),
-                         "memo": memo},
+                         "memo": memo,
+                         "analyst_take": take},
             ))
             recorded += 1
             if delivered:
@@ -194,8 +211,17 @@ async def run_alert_dispatch():
     logger.info(f"ALERT DISPATCH COMPLETE — {recorded} recorded, {sent} delivered, "
                 f"{skipped_dupe} deduped, {matured} outcomes updated")
     logger.info("=" * 60)
+
+    # Watchlist sentinel — checkups + exit-side escalation on followed tickers.
+    sentinel_stats = {}
+    try:
+        sentinel_stats = await run_sentinel()
+    except Exception as e:
+        logger.error(f"sentinel run failed: {e}")
+
     return {"records_processed": recorded,
-            "metadata": {"sent": sent, "deduped": skipped_dupe, "outcomes_updated": matured}}
+            "metadata": {"sent": sent, "deduped": skipped_dupe,
+                         "outcomes_updated": matured, "sentinel": sentinel_stats}}
 
 
 async def run_loop():
