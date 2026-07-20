@@ -12,6 +12,8 @@ from sqlalchemy.orm import sessionmaker
 
 
 def _async_url(url: str) -> str:
+    if url.startswith("sqlite"):
+        return url
     url = (
         url
         .replace("postgresql://", "postgresql+asyncpg://")
@@ -27,12 +29,14 @@ def _async_url(url: str) -> str:
 DATABASE_URL = os.environ["DATABASE_URL"]
 ASYNC_DATABASE_URL = _async_url(DATABASE_URL)
 
+# SQLite (worker unit tests) rejects Postgres pool sizing kwargs.
+_pool_kwargs = {} if ASYNC_DATABASE_URL.startswith("sqlite") else {
+    "pool_size": 5, "max_overflow": 10, "pool_pre_ping": True,
+}
 engine: AsyncEngine = create_async_engine(
     ASYNC_DATABASE_URL,
     echo=os.environ.get("LOG_LEVEL", "INFO") == "DEBUG",
-    pool_size=5,
-    max_overflow=10,
-    pool_pre_ping=True,
+    **_pool_kwargs,
 )
 
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

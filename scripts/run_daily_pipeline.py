@@ -2,8 +2,8 @@
 """
 Daily pipeline orchestrator — Sprint 6.3.
 
-Runs the full Alpha0Engine ingestion → resolution → screening → brain pipeline
-in sequence. Each worker is invoked as a subprocess with RUN_MODE=once so it
+Runs the full Alpha0Engine ingestion → screening → alerting pipeline in
+sequence. Each worker is invoked as a subprocess with RUN_MODE=once so it
 exits when its one-shot job is done (matching Railway cron behavior).
 
 Each worker writes its own `ingestion_runs` row via `shared.clients.run_tracker`.
@@ -12,8 +12,8 @@ end (`service_name='pipeline-orchestrator'`).
 
 Usage:
     python scripts/run_daily_pipeline.py
-    python scripts/run_daily_pipeline.py --only ingest-edgar,entity-resolver
-    python scripts/run_daily_pipeline.py --skip brain,nlp-engine
+    python scripts/run_daily_pipeline.py --only ingest-sec,screener
+    python scripts/run_daily_pipeline.py --skip ingest-news
     python scripts/run_daily_pipeline.py --dry-run    # show what would run
 
 Exit codes:
@@ -49,50 +49,28 @@ class Step:
         return [sys.executable, str(REPO_ROOT / self.script)]
 
 
-# Pipeline order (S6.3 + S11.2):
-#   universe discovery → prices → SEC/EDGAR → 8-K → patents → trials → FDA → news
-#   → Form 4 → 13F → GitHub → entity resolution → NLP → fundamental screener
-#   → risk filter → hyperscaler capex → screener-1000x → brain → alert-engine
-#   (S11.2 added ingest-fda + ingest-hyperscaler-capex — previously orphaned on
-#   their own Railway cron but missing from the orchestrator)
+# Pipeline order (post-restructure — see RESTRUCTURE.md):
+#   universe discovery → prices → 8-K → trials → FDA → news → Form 4 → 13F
+#   → hyperscaler capex → screener (fundamentals → risk → lenses)
+#   → alert-engine → lane calibration
 PIPELINE: list[Step] = [
     Step("universe-discovery",   "services/ingest-prices/main.py",        critical=True,
          extra_env={"RUN_MODE": "discover"},
          description="Discover US public-equity universe from SEC ticker list"),
     Step("ingest-prices",        "services/ingest-prices/main.py",        critical=True,
          description="OHLCV + market cap for the active universe"),
-    Step("ingest-edgar",         "services/ingest-edgar/main.py",         critical=True,
-         description="SEC EDGAR Form D + filings (primary catalyst source)"),
-    Step("ingest-8k",            "services/ingest-8k/main.py",            critical=False,
-         description="8-K material events"),
-    Step("ingest-patents",       "services/ingest-patents/main.py",       critical=False,
-         description="USPTO patent grants"),
+    Step("ingest-sec",           "services/sec/main.py",                  critical=False,
+         description="SEC filings — 8-K catalysts, Form 4 insiders, 13F funds"),
     Step("ingest-trials",        "services/ingest-trials/main.py",        critical=False,
          description="ClinicalTrials.gov (biotech lane)"),
     Step("ingest-fda",           "services/ingest-fda/main.py",           critical=False,
          description="OpenFDA approvals (biotech lane)"),
     Step("ingest-news",          "services/ingest-news/main.py",          critical=False,
          description="Finnhub news (soft-fails without FINNHUB_API_KEY)"),
-    Step("ingest-form4",         "services/ingest-form4/main.py",         critical=False,
-         description="Insider Form 4 transactions"),
-    Step("ingest-13f",           "services/ingest-13f/main.py",           critical=False,
-         description="13F institutional positions"),
-    Step("ingest-github",        "services/ingest-github/main.py",        critical=False,
-         description="GitHub Archive technical signals"),
-    Step("entity-resolver",      "services/entity-resolver/main.py",      critical=True,
-         description="Resolve pending signals to entities"),
-    Step("nlp-engine",           "services/nlp-engine/main.py",           critical=False,
-         description="Theme detection + embeddings"),
-    Step("fundamental-screener", "services/fundamental-screener/main.py", critical=False,
-         description="Fundamental scoring layer"),
-    Step("risk-filter",          "services/risk-filter/main.py",          critical=False,
-         description="Risk flags + hype detection"),
     Step("ingest-hyperscaler-capex", "services/ingest-hyperscaler-capex/main.py", critical=False,
          description="Hyperscaler capex inflection (L1 market-context signal)"),
-    Step("screener-1000x",       "services/screener-1000x/main.py",       critical=True,
-         description="5-lens asymmetric composite (terminal scoring step)"),
-    Step("brain",                "services/brain/main.py",                critical=False,
-         description="Brain candidate scan + narratives"),
+    Step("screener",             "services/screener/main.py",             critical=True,
+         description="Fundamentals → risk → 5-lens composite (terminal scoring step)"),
     Step("alert-engine",         "services/alert-engine/main.py",         critical=False,
          description="Dispatch DEEP_DIVE/SETUP_READY alerts to Telegram (S9)"),
     Step("lane-calibration",     "scripts/recompute_lane_calibration.py", critical=False,

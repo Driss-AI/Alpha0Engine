@@ -13,7 +13,6 @@ from shared.schemas.signals import Signal
 from shared.schemas.ingestion_run import IngestionRun
 from shared.schemas.equity_screen import EquityScreen
 from shared.schemas.score_snapshot import ScoreSnapshot
-from shared.schemas.brain_opportunity import BrainOpportunity
 from shared.schemas.entities import Entity
 
 router = APIRouter(tags=["Metrics"])
@@ -78,16 +77,6 @@ async def prometheus_metrics(session: AsyncSession = Depends(get_session)):
     lines.append("# TYPE alpha0_screened_by_tier gauge")
     for tier, count in tier_counts:
         lines.append(_prom_labeled("alpha0_screened_by_tier", {"tier": tier}, count))
-
-    # Brain picks (daily)
-    brain_today = (await session.exec(
-        select(func.count()).select_from(BrainOpportunity)
-        .where(col(BrainOpportunity.created_at) >= datetime.combine(today, datetime.min.time()))
-    )).one()
-    lines.append(_prom_line(
-        "alpha0_brain_picks_today", brain_today,
-        "Brain picks generated today", "gauge"
-    ))
 
     # Ingestion runs — last 24h errors
     recent_runs = (await session.exec(

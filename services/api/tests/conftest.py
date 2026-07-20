@@ -4,7 +4,6 @@ import types
 from unittest.mock import AsyncMock
 
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite://")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ["RATE_LIMIT"] = "10000/minute"
 
 # Force auth dev-bypass as the default for the test suite. CI sets
@@ -55,12 +54,6 @@ _fake_pg.drop_db_and_tables = _drop_db_and_tables
 _fake_pg.AsyncSessionLocal = TestSession
 _fake_pg.engine = engine
 sys.modules["shared.clients.postgres"] = _fake_pg
-
-# Stub shared.clients.redis_client
-_fake_redis = types.ModuleType("shared.clients.redis_client")
-_fake_redis.ping = AsyncMock(return_value="pong")
-_fake_redis.get_client = AsyncMock()
-sys.modules["shared.clients.redis_client"] = _fake_redis
 
 # Stub shared.clients.heartbeat
 _fake_hb = types.ModuleType("shared.clients.heartbeat")

@@ -15,18 +15,22 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
+# Documentation of the types the live ingesters actually emit (not enforced —
+# signal_type is free-form; 8-K catalyst categories are also written directly,
+# e.g. fda_approval / merger_acquisition / hyperscaler_contract).
 SIGNAL_TYPES = [
-    "patent_filing", "patent_grant", "form_d",
-    "github_commit", "github_star", "job_posting",
-    "secondary_trade", "citation", "news_mention", "crossover_filing",
-    "clinical_trial", "fda_catalyst", "form_4_insider", "8k_event",
+    "8k_event", "red_flag",                                    # sec (8-K)
+    "insider_buy_cluster", "insider_sell_cluster", "form_4_insider",  # sec (Form 4)
+    "institutional_accumulation",                              # sec (13F)
+    "clinical_trial", "fda_catalyst",                          # trials / FDA
+    "news_mention",                                            # news
+    "volume_awakening", "price_breakout", "float_snapshot",    # prices
 ]
 
 SIGNAL_SOURCES = [
-    "uspto", "edgar", "github", "caplight",
-    "forge", "hiive", "semantic_scholar", "openalexia",
-    "wellfound", "sec_13f", "manual",
-    "clinicaltrials_gov", "fda_gov", "edgar_form4", "edgar_8k",
+    "edgar_8k", "edgar_form4", "sec_13f",
+    "clinicaltrials_gov", "fda_gov",
+    "finnhub", "ingest_prices", "manual",
 ]
 
 

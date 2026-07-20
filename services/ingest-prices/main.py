@@ -273,6 +273,40 @@ async def run_price_ingestion():
                         ))
                         volume_signals_emitted += 1
 
+                # ── Float snapshot signal — real float/short interest from
+                # yfinance for the float-mechanics lens (and, over time, a
+                # float/short time series for backtests). One row per day.
+                if mcap_info.get("float_shares") or mcap_info.get("shares_short"):
+                    snap_date = datetime.utcnow().strftime("%Y-%m-%d")
+                    src_id = f"float:{ticker}:{snap_date}"
+                    exists = (await session.exec(
+                        select(Signal).where(
+                            Signal.source_id == src_id,
+                            Signal.signal_type == "float_snapshot",
+                        )
+                    )).first()
+                    if not exists:
+                        session.add(Signal(
+                            entity_id=entity.id,
+                            signal_type="float_snapshot",
+                            signal_date=datetime.utcnow(),
+                            value=0.0,  # informational — lens reads raw_data
+                            raw_data={
+                                "ticker": ticker,
+                                "float_shares": mcap_info.get("float_shares"),
+                                "short_interest": mcap_info.get("shares_short"),
+                                "short_pct_float": mcap_info.get("short_pct_float"),
+                                "days_to_cover": mcap_info.get("short_ratio"),
+                                "shares_outstanding": mcap_info.get("shares_outstanding"),
+                                "source": "yfinance",
+                            },
+                            source="ingest_prices",
+                            source_id=src_id,
+                            notes=f"float snapshot {ticker}: "
+                                  f"float={mcap_info.get('float_shares')}, "
+                                  f"short%={mcap_info.get('short_pct_float')}",
+                        ))
+
                 # Propagate market cap + short interest to scoring tables
                 mcap = mcap_info.get("market_cap")
                 shares = mcap_info.get("shares_outstanding")
