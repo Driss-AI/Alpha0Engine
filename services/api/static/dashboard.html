@@ -178,7 +178,6 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
 
 <nav class="nav">
   <button class="nav-btn active" data-tab="overview">Overview</button>
-  <button class="nav-btn" data-tab="screener">Screener</button>
   <button class="nav-btn hot" data-tab="1000x">Asymmetric Screener</button>
   <button class="nav-btn" data-tab="risk">Risk Radar</button>
   <button class="nav-btn" data-tab="watchlist" style="color:var(--amber)">Watchlist</button>
@@ -189,7 +188,6 @@ html,body{background:var(--bg);color:var(--t0);font-family:var(--mono);min-heigh
 
 <div class="main">
   <div class="section active" id="sec-overview"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Connecting to engine&hellip;</div></div></div>
-  <div class="section" id="sec-screener"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading screener&hellip;</div></div></div>
   <div class="section" id="sec-1000x"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading asymmetric screener&hellip;</div></div></div>
   <div class="section" id="sec-risk"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading risk radar&hellip;</div></div></div>
   <div class="section" id="sec-watchlist"><div class="loading-state"><div class="spinner"></div><div class="loading-txt">Loading watchlist&hellip;</div></div></div>
@@ -230,7 +228,7 @@ $$('.nav-btn').forEach(btn=>{
     btn.classList.add('active');
     $$('.section').forEach(s=>s.classList.remove('active'));
     $(`#sec-${btn.dataset.tab}`).classList.add('active');
-    ({screener:loadScreener,'1000x':load1000x,risk:loadRisk,watchlist:loadWatchlist,catalysts:loadCatalysts,deltas:loadDeltas}[btn.dataset.tab]||function(){})();
+    ({'1000x':load1000x,risk:loadRisk,watchlist:loadWatchlist,catalysts:loadCatalysts,deltas:loadDeltas}[btn.dataset.tab]||function(){})();
   });
 });
 
@@ -257,9 +255,8 @@ function statCard(lbl,val,sub,col,accentCol){
 // ── OVERVIEW ─────────────────────────────────────────────────────────────────
 async function loadOverview(){
   try{
-    const [dash,scrSum,riskSum,kxSum,pipeH]=await Promise.all([
+    const [dash,riskSum,kxSum,pipeH]=await Promise.all([
       api('/api/v1/dashboard'),
-      api('/api/v1/screener/summary').catch(()=>null),
       api('/api/v1/risk-summary').catch(()=>null),
       api('/api/v1/1000x/summary').catch(()=>null),
       api('/api/v1/pipelines').catch(()=>null),
@@ -269,26 +266,19 @@ async function loadOverview(){
     const types=dash.signals_by_type||{};
     const sources=dash.signals_by_source||{};
     const companies=dash.top_companies||[];
-    const sc2=scrSum||{};const rs=riskSum||{};const kx=kxSum||{};
-    const kxT=kx.tier_breakdown||{};const scrT=sc2.tier_breakdown||{};const rsT=rs.tier_breakdown||{};
+    const rs=riskSum||{};const kx=kxSum||{};
+    const kxT=kx.tier_breakdown||{};const rsT=rs.tier_breakdown||{};
     const maxT=Math.max(...Object.values(types),1);
 
     const html=`
     <div class="stats-row">
       ${statCard('Companies',num(s.companies_tracked),`${s.private||0} private · ${s.public||0} public`,'var(--t0)','var(--b2)')}
       ${statCard('Signals',num(s.total_signals),`${num(s.signals_this_week)} this week`,'var(--lime)','var(--lime)')}
-      ${statCard('Screened',num(sc2.total_screened),`avg ${sc(sc2.avg_fundamental_score)}`,'var(--pass)','var(--pass)')}
       ${statCard('Asymmetric Watchlist',num(kx.watchlist_count),`${num(kx.total_screened)} screened`,'var(--amber)','var(--amber)')}
       ${statCard('Risk Alerts',num((rs.hype_flagged||0)+(rs.illiquidity_flagged||0)),`${rs.hype_flagged||0} hype · ${rs.illiquidity_flagged||0} illiquid`,'var(--fail)','var(--fail)')}
     </div>
 
     <div class="panels">
-      <div class="panel">
-        <div class="sec-lbl">Screening Tiers</div>
-        <div class="tier-row">
-          ${['S','A','B','C','D'].map(t=>`<div class="tier-item"><div class="tier-num">${scrT[t]||0}</div>${tierBadge(t)}</div>`).join('')}
-        </div>
-      </div>
       <div class="panel">
         <div class="sec-lbl">Conviction Tiers</div>
         <div class="tier-row">
@@ -384,39 +374,6 @@ async function loadOverview(){
 
 // ── SCREENER (Module 3) ───────────────────────────────────────────────────────
 let scrFilter='';
-async function loadScreener(){
-  try{
-    const data=await api(scrFilter?`/api/v1/screener?tiers=${scrFilter}&limit=100`:'/api/v1/screener?limit=100');
-    const html=`
-    <div class="filter-row">
-      <span class="filter-lbl">Tier</span>
-      <button class="filter-btn ${scrFilter===''?'active':''}" onclick="scrFilter='';loadScreener()">All</button>
-      ${['S','A','B','C','D'].map(t=>`<button class="filter-btn ${scrFilter===t?'active':''}" onclick="scrFilter='${t}';loadScreener()">${t}</button>`).join('')}
-    </div>
-    <div class="panel panel-full">
-      <div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Company</th><th>Type</th><th>Tier</th><th>Score</th><th>Moat</th><th>Patent</th><th>Talent</th><th>GitHub</th><th>Gross Margin</th><th>Rev Growth</th><th>Runway</th></tr></thead>
-        <tbody>${(data||[]).map(r=>`<tr>
-          <td class="name">${r.company_name||'—'}</td>
-          <td style="font-size:10px;color:var(--t2)">${r.entity_type||''}</td>
-          <td>${tierBadge(r.screening_tier)}</td>
-          <td class="mono" style="font-weight:700">${sc(r.fundamental_score)}</td>
-          <td class="mono">${sc(r.moat_score)}</td>
-          <td class="mono">${sc(r.patent_strength)}</td>
-          <td class="mono">${sc(r.talent_density)}</td>
-          <td class="mono">${sc(r.github_momentum)}</td>
-          <td class="mono">${pct(r.gross_margin)}</td>
-          <td class="mono">${pct(r.revenue_growth_yoy)}</td>
-          <td class="mono">${r.cash_runway_months?r.cash_runway_months.toFixed(0)+'mo':r.estimated_runway_months?r.estimated_runway_months.toFixed(0)+'mo':'—'}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>
-    </div>
-    ${!data||!data.length?'<div class="empty">No screened companies yet</div>':''}`;
-    $('#sec-screener').innerHTML=html;
-    gsap.fromTo('#sec-screener .panel',{opacity:0,y:10},{opacity:1,y:0,duration:0.35,ease:'power2.out'});
-  }catch(e){$('#sec-screener').innerHTML=`<div class="loading-state" style="color:var(--fail)">Error: ${e.message}</div>`;}
-}
-
 // ── 1000x SCREENER (Module 5) ─────────────────────────────────────────────────
 let kxFilter='',kxTicker=null;
 async function load1000x(){
