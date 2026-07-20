@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 load_dotenv()
@@ -96,7 +96,6 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 app.add_middleware(RequestLoggingMiddleware)
 
 DASHBOARD_HTML = Path(__file__).parent / "static" / "dashboard.html"
-SCREENER_HTML  = Path(__file__).parent / "static" / "screener-1000x.html"
 
 
 # ── Public routes (no auth: dashboard HTML + health) ──
@@ -134,11 +133,10 @@ async def root():
     return HTMLResponse("<h1>Alpha0Engine</h1><p>Dashboard loading...</p>")
 
 
-@app.get("/screener", response_class=HTMLResponse, include_in_schema=False)
+# The old /screener page was folded into the main dashboard; keep old links working.
+@app.get("/screener", include_in_schema=False)
 async def screener():
-    if SCREENER_HTML.exists():
-        return HTMLResponse(_inject_api_key(SCREENER_HTML.read_text()))
-    return HTMLResponse("<h1>1000x Screener</h1><p>UI not found.</p>")
+    return RedirectResponse("/", status_code=307)
 
 
 # ── Health + Metrics (no auth) ──
