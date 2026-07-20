@@ -185,9 +185,31 @@ def _filter_steps(args: argparse.Namespace) -> list[tuple[Step, bool]]:
     ]
 
 
+def _wipe_requested() -> bool:
+    """True when WIPE_DATA_BEFORE_RUN asks for a pre-run wipe.
+
+    Accepts "true"/"1"/"yes" (always wipe — for manual one-offs only) or a
+    UTC date "YYYY-MM-DD" that must match today, so a flag left behind on the
+    cron service self-disarms instead of wiping every morning.
+    """
+    v = os.environ.get("WIPE_DATA_BEFORE_RUN", "").strip().lower()
+    if not v:
+        return False
+    if v in ("1", "true", "yes"):
+        return True
+    return v == datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     plan = _filter_steps(args)
+
+    if _wipe_requested():
+        plan.insert(0, (Step(
+            "wipe-data", "scripts/wipe_data.py", critical=True,
+            extra_env={"WIPE_CONFIRM": "yes"},
+            description="DANGER: truncate all data tables first (WIPE_DATA_BEFORE_RUN)",
+        ), False))
 
     print(f"\n{'─' * 78}")
     print(f"Alpha0Engine daily pipeline   ({datetime.now(timezone.utc).isoformat(timespec='seconds')})")
