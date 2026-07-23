@@ -34,6 +34,7 @@ from shared.schemas.equity_screen import EquityScreen
 from shared.schemas.signals import Signal
 
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
+from stooq_fallback import fetch_stooq_quotes, fetch_sec_shares_outstanding
 from volume_signals import detect_volume_signals
 
 logging.basicConfig(
@@ -195,10 +196,23 @@ async def run_price_ingestion():
         price_data = fetch_batch_prices(all_tickers, period="35d")
         logger.info(f"Got price data for {len(price_data)} tickers")
 
-        # ── Step 2: Fetch market caps (slower, per-ticker) ──
-        # Only fetch for tickers we got price data for
-        active_tickers = list(price_data.keys())
-        logger.info(f"Fetching market caps for {len(active_tickers)} active tickers...")
+        # ── Step 1b: Stooq fallback for whatever Yahoo blocked ──
+        # Yahoo blocks cloud IPs wholesale some days (observed: 0 rows stored).
+        # Stooq gives a keyless EOD snapshot for the missing tickers so the
+        # engine never runs priceless.
+        yahoo_tickers = set(price_data.keys())
+        missing = [t for t in all_tickers if t not in yahoo_tickers]
+        if missing:
+            logger.info(f"Stooq fallback for {len(missing)} tickers Yahoo returned nothing for...")
+            price_data.update(fetch_stooq_quotes(missing))
+            logger.info(f"Price coverage after fallback: {len(price_data)}/{len(all_tickers)}")
+
+        # ── Step 2: Market caps ─────────────────────────────
+        # yfinance .info only for tickers Yahoo actually served (1s/ticker —
+        # pointless against blocked tickers). Everything else gets
+        # close x SEC shares outstanding below.
+        active_tickers = sorted(yahoo_tickers)
+        logger.info(f"Fetching market caps for {len(active_tickers)} yahoo-served tickers...")
 
         mcap_data = {}
         for i in range(0, len(active_tickers), MCAP_BATCH):
@@ -208,6 +222,23 @@ async def run_price_ingestion():
             await asyncio.sleep(0.5)  # Rate limit
 
         logger.info(f"Got market cap data for {len(mcap_data)} tickers")
+
+        # ── Step 2b: SEC-shares market caps for the rest ────
+        need_mcap = [t for t in price_data if not mcap_data.get(t, {}).get("market_cap")]
+        if need_mcap:
+            sec_shares = fetch_sec_shares_outstanding()
+            filled = 0
+            for t in need_mcap:
+                entity = ticker_map.get(t)
+                cik = str(int(entity.cik)) if entity and entity.cik and entity.cik.isdigit() else None
+                shares = sec_shares.get(cik) if cik else None
+                close = price_data[t][-1].get("close") if price_data[t] else None
+                if shares and close:
+                    info = mcap_data.setdefault(t, {})
+                    info["market_cap"] = round(close * shares, 0)
+                    info["shares_outstanding"] = shares
+                    filled += 1
+            logger.info(f"SEC-shares market caps filled for {filled}/{len(need_mcap)} tickers")
 
         # ── Step 3: Store everything ───────────────────────
         total_stored = 0
