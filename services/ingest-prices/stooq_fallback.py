@@ -178,29 +178,34 @@ def _candidate_frames(today: Optional[date] = None) -> List[str]:
 
 
 def fetch_sec_shares_outstanding() -> Dict[str, float]:
-    """Bulk shares outstanding for every SEC filer: {cik(no leading zeros): shares}.
+    """Bulk shares outstanding by CIK (no leading zeros), merged across the
+    last 4 quarterly frames.
 
-    Tries the current quarter's frame first, stepping back up to a year until
-    a frame has data (frames publish with a lag).
+    A single instantaneous frame is surprisingly sparse (~700 filers — share
+    counts scatter across cover-date windows), so all four are merged with
+    the newest quarter winning. Slightly stale counts are fine: the numbers
+    feed market-cap ordering and sizing, not trades.
     """
     headers = {"User-Agent": SEC_USER_AGENT}
-    for frame in _candidate_frames():
+    out: Dict[str, float] = {}
+    for frame in _candidate_frames():  # newest first — first write wins
         try:
             resp = httpx.get(FRAMES_URL.format(frame=frame), headers=headers, timeout=60)
             if resp.status_code != 200:
                 continue
             rows = resp.json().get("data") or []
-            if not rows:
-                continue
-            out: Dict[str, float] = {}
+            added = 0
             for row in rows:
                 cik = row.get("cik")
                 val = row.get("val")
                 if cik is not None and val:
-                    out[str(int(cik))] = float(val)
-            logger.info(f"SEC frames {frame}: shares outstanding for {len(out)} filers")
-            return out
+                    key = str(int(cik))
+                    if key not in out:
+                        out[key] = float(val)
+                        added += 1
+            logger.info(f"SEC frames {frame}: +{added} filers (total {len(out)})")
         except Exception as e:
             logger.warning(f"SEC frames {frame} fetch failed: {e}")
-    logger.warning("SEC frames: no share data found in the last 4 quarters")
-    return {}
+    if not out:
+        logger.warning("SEC frames: no share data found in the last 4 quarters")
+    return out

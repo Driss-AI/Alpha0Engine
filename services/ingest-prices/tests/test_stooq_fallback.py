@@ -126,3 +126,49 @@ def test_finnhub_quotes_parses_and_respects_budget(monkeypatch):
     rec = out["AAA"][0]
     assert rec["close"] == 4.2 and rec["is_penny"] is True
     assert rec["change_pct"] == 0.05
+
+
+def test_finnhub_profiles_scale_millions(monkeypatch):
+    import finnhub_quotes as fq
+    monkeypatch.setenv("FINNHUB_API_KEY", "k")
+    monkeypatch.setattr(fq.time, "sleep", lambda s: None)
+
+    class FakeClient:
+        def get(self, url, params=None):
+            return type("R", (), {"status_code": 200,
+                                  "json": lambda self: {"marketCapitalization": 85.2,
+                                                        "shareOutstanding": 4.1,
+                                                        "name": "Tiny Bio"}})()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(fq.httpx, "Client", lambda **kw: FakeClient())
+    out = fq.fetch_finnhub_profiles(["TINY"])
+    assert out["TINY"]["market_cap"] == 85_200_000.0
+    assert out["TINY"]["shares_outstanding"] == 4_100_000.0
+
+
+def test_sec_frames_merge_newest_wins(monkeypatch):
+    import stooq_fallback as sf
+
+    frames_served = {
+        "CY2026Q3I": {"data": [{"cik": 111, "val": 999.0}]},
+        "CY2026Q2I": {"data": [{"cik": 111, "val": 5.0}, {"cik": 222, "val": 7.0}]},
+    }
+
+    def fake_get(url, headers=None, timeout=None):
+        for frame, payload in frames_served.items():
+            if frame in url:
+                return type("R", (), {"status_code": 200, "json": lambda self, p=payload: p})()
+        return type("R", (), {"status_code": 404, "json": lambda self: {}})()
+
+    monkeypatch.setattr(sf.httpx, "get", fake_get)
+    monkeypatch.setattr(sf, "_candidate_frames",
+                        lambda today=None: ["CY2026Q3I", "CY2026Q2I", "CY2026Q1I", "CY2025Q4I"])
+    out = sf.fetch_sec_shares_outstanding()
+    assert out["111"] == 999.0  # newest frame wins
+    assert out["222"] == 7.0    # older frame still merged in
