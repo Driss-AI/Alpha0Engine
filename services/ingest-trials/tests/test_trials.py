@@ -290,3 +290,43 @@ class TestRetry:
         )
         assert resp.status_code == 200
         assert len(sleeps) == 2  # backed off twice before the 200
+
+
+# ═══════════════════════════════════════════════════════════
+# Signal upsert idempotency — the UniqueViolation regression
+# ═══════════════════════════════════════════════════════════
+import asyncio  # noqa: E402
+from datetime import datetime as _dt  # noqa: E402
+
+
+class TestTrialSignalUpsert:
+    def test_same_nct_two_entities_no_duplicate(self):
+        """Two entities matching the same trial must yield ONE signal, no crash."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlmodel import SQLModel, select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+        from shared.schemas.signals import Signal
+        import main as trials_main
+
+        async def scenario():
+            engine = create_async_engine("sqlite+aiosqlite://")
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+            async with AsyncSession(engine) as session:
+                common = dict(
+                    nct_id="NCT06188702", signal_value=0.8, raw_data={"x": 1},
+                    signal_date=_dt(2027, 5, 1), notes="phase 3",
+                )
+                o1 = await trials_main._upsert_trial_signal(session, entity_id="ENT_A", **common)
+                o2 = await trials_main._upsert_trial_signal(session, entity_id="ENT_B", **common)
+                await session.commit()  # would raise UniqueViolation under the old code
+                rows = (await session.exec(
+                    select(Signal).where(Signal.source_id == "NCT06188702")
+                )).all()
+                return o1, o2, rows
+
+        o1, o2, rows = asyncio.get_event_loop().run_until_complete(scenario())
+        assert o1 == "created"
+        assert o2 == "updated"              # second match updates, not inserts
+        assert len(rows) == 1               # exactly one signal survives
+        assert rows[0].entity_id == "ENT_B"  # re-pointed to the latest match
