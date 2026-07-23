@@ -25,7 +25,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 STOOQ_URL = "https://stooq.com/q/l/"
-STOOQ_BATCH = 50          # symbols per request (comma-separated)
+STOOQ_BATCH = 20          # symbols per request (comma-separated)
 STOOQ_PAUSE_S = 0.7       # courtesy pause between requests
 FRAMES_URL = "https://data.sec.gov/api/xbrl/frames/dei/EntityCommonStockSharesOutstanding/shares/{frame}.json"
 SEC_USER_AGENT = "Alpha0Engine hafid.ellotfi@gmail.com"
@@ -76,6 +76,45 @@ def _parse_stooq_csv(text: str) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+class _StooqLimitReached(Exception):
+    """Raised when Stooq reports the daily hits limit — abort remaining work."""
+
+
+def _stooq_get(client: httpx.Client, batch: List[str]) -> Dict[str, Dict[str, Any]]:
+    """One /q/l/ request for a batch. The endpoint is a legacy CGI that 404s
+    on percent-encoded commas, so the query string is built by hand (literal
+    commas, bare `h` flag)."""
+    symbols = ",".join(f"{t.lower()}.us" for t in batch)
+    url = f"{STOOQ_URL}?s={symbols}&f=sd2t2ohlcv&h&e=csv"
+    resp = client.get(url)
+    body = resp.text or ""
+    if "daily hits limit" in body.lower():
+        raise _StooqLimitReached()
+    if resp.status_code != 200:
+        raise RuntimeError(f"HTTP {resp.status_code}")
+    return _parse_stooq_csv(body)
+
+
+def _fetch_batch_with_split(
+    client: httpx.Client, batch: List[str], results: Dict[str, List[Dict[str, Any]]]
+) -> None:
+    """Fetch one batch; on failure bisect (some symbols 404 whole requests)."""
+    try:
+        for ticker, rec in _stooq_get(client, batch).items():
+            results[ticker] = [rec]
+    except _StooqLimitReached:
+        raise
+    except Exception as e:
+        if len(batch) == 1:
+            logger.debug(f"Stooq gave up on {batch[0]}: {e}")
+            return
+        mid = len(batch) // 2
+        time.sleep(STOOQ_PAUSE_S)
+        _fetch_batch_with_split(client, batch[:mid], results)
+        time.sleep(STOOQ_PAUSE_S)
+        _fetch_batch_with_split(client, batch[mid:], results)
+
+
 def fetch_stooq_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
     """Bulk EOD snapshot for `tickers`. Returns {ticker: [one_day_record]}.
 
@@ -88,26 +127,23 @@ def fetch_stooq_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         return results
 
     with httpx.Client(timeout=30, follow_redirects=True) as client:
-        for i in range(0, len(tickers), STOOQ_BATCH):
-            batch = tickers[i:i + STOOQ_BATCH]
-            symbols = ",".join(f"{t.lower()}.us" for t in batch)
-            try:
-                resp = client.get(
-                    STOOQ_URL,
-                    params={"s": symbols, "f": "sd2t2ohlcv", "h": "", "e": "csv"},
-                )
-                body = resp.text or ""
-                if resp.status_code != 200:
-                    logger.warning(f"Stooq batch {i // STOOQ_BATCH + 1}: HTTP {resp.status_code}")
-                    continue
-                if "daily hits limit" in body.lower():
-                    logger.warning("Stooq daily hits limit reached — stopping fallback fetch")
-                    break
-                for ticker, rec in _parse_stooq_csv(body).items():
-                    results[ticker] = [rec]
-            except Exception as e:
-                logger.warning(f"Stooq batch {i // STOOQ_BATCH + 1} failed: {e}")
-            time.sleep(STOOQ_PAUSE_S)
+        # Probe with one liquid symbol: if this fails, the endpoint is
+        # unreachable/blocked and there is no point hammering it 500 times.
+        try:
+            probe = _stooq_get(client, ["AAPL"])
+            if not probe:
+                logger.warning("Stooq probe returned no data — skipping fallback")
+                return results
+        except Exception as e:
+            logger.warning(f"Stooq probe failed ({e}) — skipping fallback")
+            return results
+
+        try:
+            for i in range(0, len(tickers), STOOQ_BATCH):
+                _fetch_batch_with_split(client, tickers[i:i + STOOQ_BATCH], results)
+                time.sleep(STOOQ_PAUSE_S)
+        except _StooqLimitReached:
+            logger.warning("Stooq daily hits limit reached — stopping fallback fetch")
 
     logger.info(f"Stooq fallback: quotes for {len(results)}/{len(tickers)} tickers")
     return results

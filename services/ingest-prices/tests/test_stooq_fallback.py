@@ -40,3 +40,54 @@ def test_candidate_frames_mid_year():
     frames = _candidate_frames(today=date(2026, 7, 23))
     assert frames[0] == "CY2026Q3I"
     assert len(frames) == 4
+
+
+class _FakeResp:
+    def __init__(self, status_code, text):
+        self.status_code = status_code
+        self.text = text
+
+
+class _FakeClient:
+    """Serves CSV only for single-symbol requests, 404 for multi — exercises bisect."""
+    def __init__(self):
+        self.urls = []
+
+    def get(self, url):
+        self.urls.append(url)
+        symbols = url.split("?s=")[1].split("&")[0].split(",")
+        if len(symbols) > 1:
+            return _FakeResp(404, "")
+        sym = symbols[0].removesuffix(".us").upper()
+        return _FakeResp(200, f"Symbol,Date,Time,Open,High,Low,Close,Volume\n{sym}.US,2026-07-22,22:00:11,1,2,0.5,1.5,100\n")
+
+
+def test_stooq_url_has_literal_commas_and_bare_h(monkeypatch):
+    import stooq_fallback as sf
+    monkeypatch.setattr(sf.time, "sleep", lambda s: None)
+    client = _FakeClient()
+    out = {}
+    sf._fetch_batch_with_split(client, ["AAPL", "GME", "SPRB", "XYZ", "ABCD"], out)
+    first = client.urls[0]
+    assert "%2C" not in first and "aapl.us,gme.us" in first
+    assert "&h&e=csv" in first  # bare flag, not h=
+    # bisect recovered the singles (batches of >=5 split down to <5 singles served)
+    assert "AAPL" in out and out["AAPL"][0]["close"] == 1.5
+
+
+def test_stooq_probe_failure_short_circuits(monkeypatch):
+    import stooq_fallback as sf
+    monkeypatch.setattr(sf.time, "sleep", lambda s: None)
+
+    class DeadClient:
+        def get(self, url):
+            return _FakeResp(404, "")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(sf.httpx, "Client", lambda **kw: DeadClient())
+    assert sf.fetch_stooq_quotes(["AAPL", "GME"]) == {}
