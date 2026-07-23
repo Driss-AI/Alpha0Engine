@@ -128,3 +128,22 @@ class TestUniverseDiscovery:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_yfinance_fast_abort_when_blocked(monkeypatch):
+    """First 3 empty batches → assume blocked IP and skip the rest."""
+    import price_fetcher as pf
+
+    calls = {"n": 0}
+
+    class EmptyDF:
+        empty = True
+
+    def fake_download(*a, **kw):
+        calls["n"] += 1
+        return EmptyDF()
+
+    monkeypatch.setattr(pf.yf, "download", fake_download)
+    tickers = [f"T{i}" for i in range(pf.BATCH_SIZE * 10)]
+    assert pf.fetch_batch_prices(tickers) == {}
+    assert calls["n"] == 3  # bailed after 3 empty batches, not 10
