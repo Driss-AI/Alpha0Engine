@@ -242,6 +242,52 @@ async def _persist_clinical_trial(
         )
 
 
+async def _upsert_trial_signal(
+    session: AsyncSession,
+    *,
+    nct_id: str,
+    entity_id: str,
+    signal_value: float,
+    raw_data: Dict[str, Any],
+    signal_date: datetime,
+    notes: str,
+) -> str:
+    """Create or update the single clinical_trial Signal for an NCT.
+
+    The DB unique key is (source, source_id, signal_type) — entity-agnostic —
+    so we look it up that way and update in place (re-pointing entity_id) when
+    it exists, rather than inserting a duplicate that would abort the batch.
+    Returns "created" or "updated". Relies on autoflush so rows pending from
+    earlier in the same run are also found.
+    """
+    existing = (await session.exec(
+        select(Signal).where(
+            Signal.source == "clinicaltrials_gov",
+            Signal.source_id == nct_id,
+            Signal.signal_type == "clinical_trial",
+        )
+    )).first()
+    if existing:
+        existing.entity_id = entity_id
+        existing.value = signal_value
+        existing.raw_data = raw_data
+        existing.signal_date = signal_date
+        existing.notes = notes
+        session.add(existing)
+        return "updated"
+    session.add(Signal(
+        entity_id=entity_id,
+        signal_type="clinical_trial",
+        signal_date=signal_date,
+        value=signal_value,
+        raw_data=raw_data,
+        source="clinicaltrials_gov",
+        source_id=nct_id,
+        notes=notes,
+    ))
+    return "created"
+
+
 async def run_trial_ingestion():
     """Main daily clinical trial ingestion."""
     logger.info("=" * 60)
@@ -310,8 +356,22 @@ async def run_trial_ingestion():
         signals_created = 0
         signals_updated = 0
         unmatched = 0
+        skipped_dupes = 0
+        # A clinical_trial Signal is unique on (source, source_id, signal_type)
+        # in the DB — NOT on entity_id. Two entities can fuzzy-match the same
+        # trial sponsor, so track which NCTs we've already handled this run and
+        # look up existing rows by the real DB key to avoid duplicate-key aborts.
+        seen_ncts_this_run: set[str] = set()
 
-        for trial in unique_trials:
+        async def _flush(tag: str) -> None:
+            """Commit accumulated signals; roll back (not crash) on any error."""
+            try:
+                await session.commit()
+            except Exception as e:
+                logger.error(f"trial signal commit failed ({tag}), rolling back: {e}")
+                await session.rollback()
+
+        for idx, trial in enumerate(unique_trials):
             sponsor = trial.get("lead_sponsor", "")
             if not sponsor:
                 continue
@@ -332,8 +392,11 @@ async def run_trial_ingestion():
             entity_id = matched["id"]
             nct_id = trial["nct_id"]
 
-            # Check for existing signal
-            exists = await check_existing_signal(session, entity_id, nct_id)
+            # One signal per trial per run (the DB key ignores entity_id).
+            if nct_id in seen_ncts_this_run:
+                skipped_dupes += 1
+                continue
+            seen_ncts_this_run.add(nct_id)
 
             # Compute catalyst data
             proximity_days = _compute_catalyst_proximity(trial)
@@ -372,38 +435,16 @@ async def run_trial_ingestion():
             }
 
             signal_date = trial.get("primary_completion_dt") or trial.get("completion_dt") or datetime.utcnow()
+            notes = f"{trial.get('phase', '')} — {trial.get('title', '')[:100]}"
 
-            if exists:
-                # Update existing signal with fresh data
-                result = await session.exec(
-                    select(Signal).where(
-                        Signal.entity_id == entity_id,
-                        Signal.source_id == nct_id,
-                    )
-                )
-                sig = result.first()
-                if sig:
-                    sig.value = signal_value
-                    sig.raw_data = raw_data
-                    sig.notes = f"{trial.get('phase', '')} — {trial.get('title', '')[:100]}"
-                    session.add(sig)
-                    signals_updated += 1
+            outcome = await _upsert_trial_signal(
+                session, nct_id=nct_id, entity_id=entity_id, signal_value=signal_value,
+                raw_data=raw_data, signal_date=signal_date, notes=notes,
+            )
+            if outcome == "updated":
+                signals_updated += 1
             else:
-                # Create new signal
-                signal = Signal(
-                    entity_id=entity_id,
-                    signal_type="clinical_trial",
-                    signal_date=signal_date,
-                    value=signal_value,
-                    raw_data=raw_data,
-                    source="clinicaltrials_gov",
-                    source_id=nct_id,
-                    notes=f"{trial.get('phase', '')} — {trial.get('title', '')[:100]}",
-                )
-                session.add(signal)
                 signals_created += 1
-
-                # Log high-value catalysts
                 if signal_value >= 0.7:
                     ticker = matched.get("ticker", "?")
                     logger.info(
@@ -413,13 +454,18 @@ async def run_trial_ingestion():
                         f"{trial.get('title', '')[:60]}"
                     )
 
-        await session.commit()
+            # Commit in batches so one bad row can't discard the whole run's work.
+            if (idx + 1) % 100 == 0:
+                await _flush(f"batch@{idx + 1}")
+
+        await _flush("final")
 
         logger.info("=" * 60)
         logger.info(f"CLINICAL TRIAL INGESTION COMPLETE")
         logger.info(f"  Unique trials found: {len(unique_trials)}")
         logger.info(f"  Signals created: {signals_created}")
         logger.info(f"  Signals updated: {signals_updated}")
+        logger.info(f"  Duplicate trials skipped: {skipped_dupes}")
         logger.info(f"  Unmatched sponsors: {unmatched}")
         logger.info("=" * 60)
 
