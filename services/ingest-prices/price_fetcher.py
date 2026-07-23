@@ -33,13 +33,24 @@ def fetch_batch_prices(
         return {}
 
     results = {}
+    empty_batches = 0
 
     # Process in batches to avoid yfinance choking
     for i in range(0, len(tickers), BATCH_SIZE):
+        # Yahoo blocks whole cloud-provider IP ranges: when the first few
+        # batches all come back empty, the rest will too — bail out fast and
+        # let the fallbacks (Stooq/Finnhub) have the time budget instead.
+        if empty_batches >= 3 and not results:
+            logger.warning(
+                f"yfinance returned nothing for the first {empty_batches} batches — "
+                f"assuming blocked IP, skipping remaining {len(tickers) - i} tickers"
+            )
+            break
         batch = tickers[i:i + BATCH_SIZE]
         batch_str = " ".join(batch)
         logger.info(f"Fetching prices for {len(batch)} tickers (batch {i // BATCH_SIZE + 1})")
 
+        before = len(results)
         try:
             df = yf.download(
                 batch_str,
@@ -52,6 +63,7 @@ def fetch_batch_prices(
 
             if df.empty:
                 logger.warning(f"Empty result for batch starting at {i}")
+                empty_batches += 1
                 continue
 
             # Single ticker returns flat columns, multi returns MultiIndex
@@ -73,6 +85,8 @@ def fetch_batch_prices(
 
         except Exception as e:
             logger.error(f"yfinance batch download failed: {e}")
+
+        empty_batches = empty_batches + 1 if len(results) == before else 0
 
     return results
 

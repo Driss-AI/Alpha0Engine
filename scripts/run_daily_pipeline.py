@@ -59,6 +59,7 @@ PIPELINE: list[Step] = [
          extra_env={"RUN_MODE": "discover"},
          description="Discover US public-equity universe from SEC ticker list"),
     Step("ingest-prices",        "services/ingest-prices/main.py",        critical=True,
+         timeout_s=60 * 90,  # Finnhub fallback alone budgets ~30 min at 60 req/min
          description="OHLCV + market cap for the active universe"),
     Step("ingest-sec",           "services/sec/main.py",                  critical=False,
          description="SEC filings — 8-K catalysts, Form 4 insiders, 13F funds"),
