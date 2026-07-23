@@ -91,3 +91,38 @@ def test_stooq_probe_failure_short_circuits(monkeypatch):
 
     monkeypatch.setattr(sf.httpx, "Client", lambda **kw: DeadClient())
     assert sf.fetch_stooq_quotes(["AAPL", "GME"]) == {}
+
+
+def test_finnhub_quotes_no_key_returns_empty(monkeypatch):
+    import finnhub_quotes as fq
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+    assert fq.fetch_finnhub_quotes(["AAPL"]) == {}
+
+
+def test_finnhub_quotes_parses_and_respects_budget(monkeypatch):
+    import finnhub_quotes as fq
+    monkeypatch.setenv("FINNHUB_API_KEY", "k")
+    monkeypatch.setenv("FINNHUB_QUOTE_BUDGET", "2")
+    monkeypatch.setattr(fq.time, "sleep", lambda s: None)
+    calls = []
+
+    class FakeClient:
+        def get(self, url, params=None):
+            calls.append(params["symbol"])
+            return _FakeResp(200, "") if False else type(
+                "R", (), {"status_code": 200,
+                          "json": lambda self: {"c": 4.2, "o": 4.0, "h": 4.5, "l": 3.9, "dp": 5.0}}
+            )()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(fq.httpx, "Client", lambda **kw: FakeClient())
+    out = fq.fetch_finnhub_quotes(["AAA", "BBB", "CCC"])
+    assert calls == ["AAA", "BBB"]  # budget of 2 respected
+    rec = out["AAA"][0]
+    assert rec["close"] == 4.2 and rec["is_penny"] is True
+    assert rec["change_pct"] == 0.05

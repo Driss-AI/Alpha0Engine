@@ -35,6 +35,7 @@ from shared.schemas.signals import Signal
 
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
 from stooq_fallback import fetch_stooq_quotes, fetch_sec_shares_outstanding
+from finnhub_quotes import fetch_finnhub_quotes
 from volume_signals import detect_volume_signals
 
 logging.basicConfig(
@@ -205,7 +206,21 @@ async def run_price_ingestion():
         if missing:
             logger.info(f"Stooq fallback for {len(missing)} tickers Yahoo returned nothing for...")
             price_data.update(fetch_stooq_quotes(missing))
-            logger.info(f"Price coverage after fallback: {len(price_data)}/{len(all_tickers)}")
+            logger.info(f"Price coverage after Stooq: {len(price_data)}/{len(all_tickers)}")
+
+        # ── Step 1c: Finnhub last resort (rate-limited, budget-capped) ──
+        # Signal-bearing entities first: they are the ones the screener can
+        # actually score, so the budget goes where it matters.
+        still_missing = [t for t in all_tickers if t not in price_data]
+        if still_missing:
+            signal_eids = set(
+                (await session.exec(select(Signal.entity_id).distinct())).all()
+            )
+            still_missing.sort(
+                key=lambda t: (ticker_map[t].id not in signal_eids)
+            )
+            price_data.update(fetch_finnhub_quotes(still_missing))
+            logger.info(f"Price coverage after Finnhub: {len(price_data)}/{len(all_tickers)}")
 
         # ── Step 2: Market caps ─────────────────────────────
         # yfinance .info only for tickers Yahoo actually served (1s/ticker —
