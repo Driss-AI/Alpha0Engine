@@ -21,14 +21,23 @@ import httpx
 logger = logging.getLogger(__name__)
 
 QUOTE_URL = "https://finnhub.io/api/v1/quote"
+PROFILE_URL = "https://finnhub.io/api/v1/stock/profile2"
 PACE_S = 1.05  # ~57 calls/min, safely under the 60/min free-tier cap
 
 
-def quote_budget() -> int:
+def _budget(env: str, default: int = 1800) -> int:
     try:
-        return int(os.environ.get("FINNHUB_QUOTE_BUDGET", "1800"))
+        return int(os.environ.get(env, str(default)))
     except ValueError:
-        return 1800
+        return default
+
+
+def quote_budget() -> int:
+    return _budget("FINNHUB_QUOTE_BUDGET")
+
+
+def profile_budget() -> int:
+    return _budget("FINNHUB_PROFILE_BUDGET")
 
 
 def fetch_finnhub_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
@@ -87,5 +96,54 @@ def fetch_finnhub_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
             time.sleep(PACE_S)
 
     logger.info(f"Finnhub quote fallback: {len(results)}/{len(todo)} tickers "
+                f"({errors} errors)")
+    return results
+
+
+def fetch_finnhub_profiles(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Market cap + shares outstanding via /stock/profile2, budget-capped.
+
+    profile2 reports marketCapitalization and shareOutstanding in MILLIONS —
+    values are scaled to absolute units here. Returns {ticker: {market_cap,
+    shares_outstanding, company_name, industry}}; {} without an API key.
+    """
+    api_key = os.environ.get("FINNHUB_API_KEY", "").strip()
+    results: Dict[str, Dict[str, Any]] = {}
+    if not api_key or not tickers:
+        return results
+
+    todo = tickers[:profile_budget()]
+    logger.info(f"Finnhub profile fallback: fetching {len(todo)} tickers "
+                f"(~{len(todo) * PACE_S / 60:.0f} min)")
+
+    errors = 0
+    with httpx.Client(timeout=15) as client:
+        for ticker in todo:
+            try:
+                resp = client.get(PROFILE_URL, params={"symbol": ticker, "token": api_key})
+                if resp.status_code == 429:
+                    logger.warning("Finnhub 429 — sleeping 30s")
+                    time.sleep(30)
+                    continue
+                if resp.status_code != 200:
+                    errors += 1
+                    continue
+                p = resp.json() or {}
+                mcap_m = p.get("marketCapitalization")
+                shares_m = p.get("shareOutstanding")
+                if not mcap_m and not shares_m:
+                    continue
+                results[ticker] = {
+                    "market_cap": round(mcap_m * 1e6, 0) if mcap_m else None,
+                    "shares_outstanding": round(shares_m * 1e6, 0) if shares_m else None,
+                    "company_name": p.get("name"),
+                    "industry": p.get("finnhubIndustry"),
+                }
+            except Exception as e:
+                errors += 1
+                logger.debug(f"Finnhub profile failed for {ticker}: {e}")
+            time.sleep(PACE_S)
+
+    logger.info(f"Finnhub profile fallback: {len(results)}/{len(todo)} tickers "
                 f"({errors} errors)")
     return results

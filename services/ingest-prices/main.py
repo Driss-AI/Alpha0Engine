@@ -35,7 +35,7 @@ from shared.schemas.signals import Signal
 
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
 from stooq_fallback import fetch_stooq_quotes, fetch_sec_shares_outstanding
-from finnhub_quotes import fetch_finnhub_quotes
+from finnhub_quotes import fetch_finnhub_quotes, fetch_finnhub_profiles
 from volume_signals import detect_volume_signals
 
 logging.basicConfig(
@@ -254,6 +254,21 @@ async def run_price_ingestion():
                     info["shares_outstanding"] = shares
                     filled += 1
             logger.info(f"SEC-shares market caps filled for {filled}/{len(need_mcap)} tickers")
+
+        # ── Step 2c: Finnhub profiles for caps still missing ─
+        # (SEC frames are sparse — a single quarter covers ~700 filers.)
+        still_capless = [t for t in price_data
+                         if not mcap_data.get(t, {}).get("market_cap")]
+        if still_capless:
+            for t, info in fetch_finnhub_profiles(still_capless).items():
+                merged = mcap_data.setdefault(t, {})
+                for k, v in info.items():
+                    if v and not merged.get(k):
+                        merged[k] = v
+            with_cap = sum(1 for t in price_data
+                           if mcap_data.get(t, {}).get("market_cap"))
+            logger.info(f"Market-cap coverage after Finnhub profiles: "
+                        f"{with_cap}/{len(price_data)} priced tickers")
 
         # ── Step 3: Store everything ───────────────────────
         total_stored = 0
