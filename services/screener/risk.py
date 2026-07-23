@@ -23,6 +23,7 @@ from shared.schemas.risk import RiskAssessment
 from hype_detector import detect_hype_patterns
 from illiquidity_scorer import compute_illiquidity_risk
 from risk_engine import compute_risk_score
+from shared.services.universe import latest_market_caps, order_smallest_first
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s | %(name)s | %(message)s")
 logger = logging.getLogger("screener.risk")
@@ -125,7 +126,9 @@ async def run_risk_batch():
     await create_db_and_tables()
 
     async with AsyncSessionLocal() as session:
-        entities = (await session.exec(select(Entity).limit(1000))).all()
+        entities = (await session.exec(select(Entity).limit(10000))).all()
+        # Smallest first: a timeout must cut the mega-cap tail, not the gems.
+        entities = order_smallest_first(entities, await latest_market_caps(session))
         logger.info(f"Found {len(entities)} entities to assess")
         if not entities:
             return

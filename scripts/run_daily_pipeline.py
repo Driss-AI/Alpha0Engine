@@ -44,6 +44,7 @@ class Step:
     critical: bool = False             # if True, failure aborts the pipeline
     extra_env: dict[str, str] = field(default_factory=dict)
     description: str = ""
+    timeout_s: int = 60 * 30           # per-step wall clock cap
 
     def cmd(self) -> list[str]:
         return [sys.executable, str(REPO_ROOT / self.script)]
@@ -70,6 +71,7 @@ PIPELINE: list[Step] = [
     Step("ingest-hyperscaler-capex", "services/ingest-hyperscaler-capex/main.py", critical=False,
          description="Hyperscaler capex inflection (L1 market-context signal)"),
     Step("screener",             "services/screener/main.py",             critical=True,
+         timeout_s=60 * 180,  # 3h — scores the whole universe, smallest caps first
          description="Fundamentals → risk → 5-lens composite (terminal scoring step)"),
     Step("alert-engine",         "services/alert-engine/main.py",         critical=False,
          description="Dispatch DEEP_DIVE/SETUP_READY alerts to Telegram (S9)"),
@@ -113,7 +115,7 @@ def run_step(step: Step, *, dry_run: bool) -> StepResult:
             step.cmd(),
             cwd=REPO_ROOT,
             env=env,
-            timeout=60 * 30,  # 30 min per step
+            timeout=step.timeout_s,
             check=False,
         )
         exit_code = proc.returncode
@@ -161,8 +163,10 @@ async def _record_summary(results: list[StepResult]) -> None:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--only", help="Comma-separated step names to include (others skipped)")
-    p.add_argument("--skip", help="Comma-separated step names to skip")
+    p.add_argument("--only", default=os.environ.get("PIPELINE_ONLY") or None,
+                   help="Comma-separated step names to include (others skipped); env: PIPELINE_ONLY")
+    p.add_argument("--skip", default=os.environ.get("PIPELINE_SKIP") or None,
+                   help="Comma-separated step names to skip; env: PIPELINE_SKIP")
     p.add_argument("--dry-run", action="store_true", help="Print what would run, don't execute")
     p.add_argument("--continue-on-critical", action="store_true",
                    help="Don't abort the pipeline when a critical step fails")

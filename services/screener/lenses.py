@@ -37,6 +37,7 @@ from shared.lanes import get_lane
 from shared.scoring import compute_axes, classify_bucket, detect_red_flags
 from shared.services.evidence_recorder import record_evidence
 from shared.services.snapshots import write_daily_snapshots
+from shared.services.universe import latest_market_caps, order_smallest_first
 
 from shared.logging import setup_logging, get_logger
 
@@ -430,7 +431,7 @@ async def run_screening_batch():
             select(Entity).where(
                 Entity.entity_type == "public",
                 Entity.cik.isnot(None),  # type: ignore[union-attr]
-            ).limit(2000)
+            ).limit(10000)
         )).all()
         logger.info(f"Found {len(entities)} public entities to screen")
 
@@ -438,16 +439,14 @@ async def run_screening_batch():
             logger.info("No public entities found. Exiting.")
             return
 
-        # Calendar inversion (RESTRUCTURE.md §3.1): entities with a dated
-        # upcoming catalyst are scored FIRST, so the names that can actually
-        # move on an event always get fresh scores even if the batch is cut
-        # short by rate limits or the step timeout.
+        # Calendar inversion (RESTRUCTURE.md §3.1): dated-catalyst names are
+        # scored FIRST, then smallest market caps — so if the batch is cut
+        # short (rate limits, step timeout) the sacrifice is the mega-cap
+        # tail, never the micro-cap hunting ground.
         priority_ids = await load_catalyst_priority_entities(session)
+        caps = await latest_market_caps(session)
+        entities = order_smallest_first(entities, caps, priority_ids)
         if priority_ids:
-            entities = sorted(
-                entities,
-                key=lambda e: (e.id not in priority_ids),  # False (priority) sorts first
-            )
             n_priority = sum(1 for e in entities if e.id in priority_ids)
             logger.info(
                 f"Catalyst calendar: {n_priority} entities with upcoming dated "
