@@ -6,9 +6,16 @@ Free API, no key required. Returns active clinical trials with:
   - Primary/study completion dates (catalyst timing)
   - Intervention details (drug names)
 
-Rate limit: be polite, ~3 req/sec max.
+Phase filtering uses the v2 `aggFilters` parameter (`phase:2 3`) — the older
+`filter.phase` name is NOT a valid v2 parameter and returns HTTP 400. We also
+filter phase client-side as a safety net, so a filter-syntax drift degrades to
+"fetch more, keep the right ones" instead of returning nothing.
+
+Rate limit: the public endpoint 429s aggressively from cloud IPs, so every
+request goes through a backoff-retry that honors Retry-After.
 Docs: https://clinicaltrials.gov/data-api/api
 """
+import asyncio
 import logging
 import httpx
 from typing import Dict, Any, Optional, List
@@ -17,29 +24,6 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
-
-# Fields we need for catalyst detection
-FIELDS = [
-    "NCTId",
-    "BriefTitle",
-    "OfficialTitle",
-    "OverallStatus",
-    "Phase",
-    "StartDate",
-    "PrimaryCompletionDate",
-    "CompletionDate",
-    "StudyFirstPostDate",
-    "LastUpdatePostDate",
-    "LeadSponsorName",
-    "CollaboratorName",
-    "Condition",
-    "InterventionName",
-    "InterventionType",
-    "StudyType",
-    "EnrollmentCount",
-    "DesignPrimaryPurpose",
-    "ResultsFirstPostDate",
-]
 
 # Phases that matter for binary catalysts
 CATALYST_PHASES = ["PHASE2", "PHASE3", "PHASE2/PHASE3"]
@@ -52,9 +36,58 @@ ACTIVE_STATUSES = [
     "COMPLETED",  # Results may be pending
 ]
 
+# v2 aggFilters phase codes: 0=Early P1, 1=P1, 2=P2, 3=P3, 4=P4
+_PHASE_CODE = {"EARLY_PHASE1": "0", "PHASE1": "1", "PHASE2": "2", "PHASE3": "3", "PHASE4": "4"}
+
+_MAX_RETRIES = 5
+
+
+def _phase_codes(phases: List[str]) -> List[str]:
+    """Map phase names (incl. combined 'PHASE2/PHASE3') to v2 aggFilter codes."""
+    codes: List[str] = []
+    for p in phases:
+        for part in p.upper().split("/"):
+            code = _PHASE_CODE.get(part.strip())
+            if code and code not in codes:
+                codes.append(code)
+    return codes
+
+
+def _phase_matches(phase_str: str, wanted: List[str]) -> bool:
+    """Client-side guard: does a study's phase overlap the requested phases?"""
+    if not wanted:
+        return True
+    have = {p.strip().upper() for p in (phase_str or "").split("/") if p.strip()}
+    want = {p.strip().upper() for w in wanted for p in w.split("/")}
+    return bool(have & want)
+
+
+def _build_params(
+    *,
+    sponsor: Optional[str],
+    condition: Optional[str],
+    intervention: Optional[str],
+    phases: List[str],
+    statuses: List[str],
+    page_size: int,
+) -> Dict[str, str]:
+    """Assemble v2 query params. Never emits the invalid `filter.phase`."""
+    params: Dict[str, str] = {"format": "json", "pageSize": str(min(page_size, 100))}
+    codes = _phase_codes(phases)
+    if codes:
+        params["aggFilters"] = f"phase:{' '.join(codes)}"
+    if statuses:
+        params["filter.overallStatus"] = ",".join(statuses)
+    if sponsor:
+        params["query.spons"] = sponsor
+    if condition:
+        params["query.cond"] = condition
+    if intervention:
+        params["query.intr"] = intervention
+    return params
+
 
 def _safe_get(d: dict, *keys, default=None):
-    """Safely traverse nested dict."""
     current = d
     for key in keys:
         if isinstance(current, dict):
@@ -67,7 +100,6 @@ def _safe_get(d: dict, *keys, default=None):
 
 
 def _parse_ct_date(date_str: Optional[str]) -> Optional[datetime]:
-    """Parse ClinicalTrials.gov date formats."""
     if not date_str:
         return None
     for fmt in ["%Y-%m-%d", "%Y-%m", "%B %d, %Y", "%B %Y"]:
@@ -79,7 +111,6 @@ def _parse_ct_date(date_str: Optional[str]) -> Optional[datetime]:
 
 
 def _extract_study(study_data: dict) -> Dict[str, Any]:
-    """Extract relevant fields from a CT.gov v2 study response."""
     proto = study_data.get("protocolSection", {})
     ident = proto.get("identificationModule", {})
     status_mod = proto.get("statusModule", {})
@@ -88,27 +119,19 @@ def _extract_study(study_data: dict) -> Dict[str, Any]:
     conditions_mod = proto.get("conditionsModule", {})
     interventions_mod = proto.get("armsInterventionsModule", {})
 
-    # Sponsor info
     lead_sponsor = _safe_get(sponsor_mod, "leadSponsor", "name", default="")
     sponsor_class = _safe_get(sponsor_mod, "leadSponsor", "class", default="")
-    collaborators = [
-        c.get("name", "") for c in sponsor_mod.get("collaborators", [])
-    ]
+    collaborators = [c.get("name", "") for c in sponsor_mod.get("collaborators", [])]
 
-    # Phase
     phases = design_mod.get("phases", [])
     phase_str = "/".join(phases) if phases else ""
 
-    # Dates
     start_date = _safe_get(status_mod, "startDateStruct", "date")
     primary_completion = _safe_get(status_mod, "primaryCompletionDateStruct", "date")
     completion = _safe_get(status_mod, "completionDateStruct", "date")
     results_date = _safe_get(status_mod, "resultsFirstPostDateStruct", "date")
 
-    # Conditions
     conditions = conditions_mod.get("conditions", [])
-
-    # Interventions
     interventions = []
     for interv in interventions_mod.get("interventions", []):
         interventions.append({
@@ -116,8 +139,6 @@ def _extract_study(study_data: dict) -> Dict[str, Any]:
             "type": interv.get("type", ""),
             "description": interv.get("description", "")[:200] if interv.get("description") else "",
         })
-
-    # Enrollment
     enrollment = _safe_get(design_mod, "enrollmentInfo", "count")
 
     return {
@@ -127,7 +148,7 @@ def _extract_study(study_data: dict) -> Dict[str, Any]:
         "status": status_mod.get("overallStatus", ""),
         "phase": phase_str,
         "lead_sponsor": lead_sponsor,
-        "sponsor_class": sponsor_class,  # INDUSTRY / NIH / OTHER
+        "sponsor_class": sponsor_class,
         "collaborators": collaborators,
         "conditions": conditions,
         "interventions": interventions,
@@ -142,6 +163,33 @@ def _extract_study(study_data: dict) -> Dict[str, Any]:
     }
 
 
+async def _get_with_retry(
+    client: httpx.AsyncClient, params: Dict[str, str],
+) -> Optional[httpx.Response]:
+    """GET with 429 backoff (honors Retry-After). Returns None if it never got 2xx/4xx≠429."""
+    delay = 2.0
+    for attempt in range(_MAX_RETRIES):
+        try:
+            resp = await client.get(BASE_URL, params=params)
+        except Exception as e:
+            logger.error(f"CT.gov request error: {e}")
+            return None
+        if resp.status_code == 429:
+            wait = delay
+            ra = resp.headers.get("retry-after")
+            if ra:
+                try:
+                    wait = float(ra)
+                except ValueError:
+                    pass
+            logger.warning(f"CT.gov 429 — backing off {wait:.0f}s (attempt {attempt + 1})")
+            await asyncio.sleep(wait)
+            delay = min(delay * 2, 60)
+            continue
+        return resp
+    return None
+
+
 async def search_trials(
     sponsor: Optional[str] = None,
     condition: Optional[str] = None,
@@ -151,60 +199,37 @@ async def search_trials(
     page_size: int = 50,
     max_pages: int = 5,
 ) -> List[Dict[str, Any]]:
-    """
-    Search ClinicalTrials.gov for trials matching criteria.
-    Returns parsed study records.
-    """
+    """Search ClinicalTrials.gov (v2) for trials matching criteria."""
     if phases is None:
         phases = CATALYST_PHASES
     if statuses is None:
         statuses = ACTIVE_STATUSES
 
-    params = {
-        "format": "json",
-        "pageSize": min(page_size, 100),
-    }
+    params = _build_params(
+        sponsor=sponsor, condition=condition, intervention=intervention,
+        phases=phases, statuses=statuses, page_size=page_size,
+    )
 
-    # Build filters as separate params (CT.gov v2 API syntax)
-    if phases:
-        params["filter.phase"] = ",".join(phases)
-    if statuses:
-        params["filter.overallStatus"] = ",".join(statuses)
-    if sponsor:
-        params["query.spons"] = sponsor
-    if condition:
-        params["query.cond"] = condition
-    if intervention:
-        params["query.intr"] = intervention
-
-    all_studies = []
-    next_token = None
-
+    all_studies: List[Dict[str, Any]] = []
     async with httpx.AsyncClient(timeout=30) as client:
         for page in range(max_pages):
-            if page > 0 and next_token:
-                params["pageToken"] = next_token
+            resp = await _get_with_retry(client, params)
+            if resp is None:
+                break
+            if resp.status_code != 200:
+                logger.error(f"CT.gov API returned {resp.status_code}: {resp.text[:200]}")
+                break
 
-            try:
-                resp = await client.get(BASE_URL, params=params)
-                if resp.status_code != 200:
-                    logger.error(f"CT.gov API returned {resp.status_code}: {resp.text[:200]}")
-                    break
-
-                data = resp.json()
-                studies = data.get("studies", [])
-
-                for study in studies:
-                    parsed = _extract_study(study)
+            data = resp.json()
+            for study in data.get("studies", []):
+                parsed = _extract_study(study)
+                if _phase_matches(parsed["phase"], phases):  # client-side guard
                     all_studies.append(parsed)
 
-                next_token = data.get("nextPageToken")
-                if not next_token:
-                    break
-
-            except Exception as e:
-                logger.error(f"CT.gov search failed: {e}")
+            next_token = data.get("nextPageToken")
+            if not next_token:
                 break
+            params["pageToken"] = next_token
 
     return all_studies
 

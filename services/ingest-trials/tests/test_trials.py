@@ -229,3 +229,64 @@ class TestCatalystProximity:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ═══════════════════════════════════════════════════════════
+# v2 param building — the filter.phase 400 regression
+# ═══════════════════════════════════════════════════════════
+from ct_client import _build_params, _phase_codes, _phase_matches, _get_with_retry  # noqa: E402
+
+
+class TestV2Params:
+    def test_never_emits_invalid_filter_phase(self):
+        p = _build_params(sponsor=None, condition=None, intervention=None,
+                          phases=["PHASE2", "PHASE3"], statuses=["RECRUITING"], page_size=100)
+        assert "filter.phase" not in p                      # the bug that 400'd
+        assert p["aggFilters"] == "phase:2 3"               # v2-correct
+        assert p["filter.overallStatus"] == "RECRUITING"
+
+    def test_phase_codes_handles_combined(self):
+        assert _phase_codes(["PHASE2/PHASE3"]) == ["2", "3"]
+        assert _phase_codes(["PHASE3"]) == ["3"]
+
+    def test_sponsor_query_param(self):
+        p = _build_params(sponsor="Spruce Bio", condition=None, intervention=None,
+                          phases=[], statuses=[], page_size=50)
+        assert p["query.spons"] == "Spruce Bio"
+        assert "aggFilters" not in p
+
+    def test_client_side_phase_guard(self):
+        assert _phase_matches("PHASE3", ["PHASE2", "PHASE3"]) is True
+        assert _phase_matches("PHASE1", ["PHASE2", "PHASE3"]) is False
+        assert _phase_matches("", ["PHASE3"]) is False
+
+
+class TestRetry:
+    def test_429_backs_off_then_succeeds(self, monkeypatch):
+        import asyncio
+        import ct_client
+
+        sleeps = []
+
+        async def fake_sleep(s):
+            sleeps.append(s)
+
+        class Resp:
+            def __init__(self, code):
+                self.status_code = code
+                self.headers = {}
+
+        class FakeClient:
+            def __init__(self):
+                self.n = 0
+
+            async def get(self, url, params=None):
+                self.n += 1
+                return Resp(429) if self.n < 3 else Resp(200)
+
+        monkeypatch.setattr(ct_client.asyncio, "sleep", fake_sleep)
+        resp = asyncio.get_event_loop().run_until_complete(
+            _get_with_retry(FakeClient(), {})
+        )
+        assert resp.status_code == 200
+        assert len(sleeps) == 2  # backed off twice before the 200

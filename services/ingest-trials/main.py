@@ -56,7 +56,7 @@ BIOTECH_SECTORS = [
     "drug", "clinical", "genomic",
 ]
 
-CT_RATE_DELAY = 0.5  # Seconds between CT.gov API calls
+CT_RATE_DELAY = 1.0  # Seconds between CT.gov API calls (the endpoint 429s easily)
 
 
 def _is_biotech_entity(entity: Entity) -> bool:
@@ -279,19 +279,21 @@ async def run_trial_ingestion():
             except Exception as e:
                 logger.error(f"CT.gov search failed for '{name}': {e}")
 
-        # ── Strategy 2: Bulk search active Phase 3 trials ──
-        logger.info("Bulk-searching active Phase 3 trials...")
+        # ── Strategy 2: Bulk search active Phase 2/3 trials ──
+        # The efficient path: a few paginated requests cover most industry
+        # Phase 2/3 trials, which we then match to entities by sponsor.
+        logger.info("Bulk-searching active Phase 2/3 trials...")
         try:
-            phase3_trials = await search_trials(
-                phases=["PHASE3"],
+            bulk_trials = await search_trials(
+                phases=["PHASE2", "PHASE3"],
                 statuses=["RECRUITING", "ACTIVE_NOT_RECRUITING", "COMPLETED"],
                 page_size=100,
-                max_pages=10,
+                max_pages=20,
             )
-            all_trials.extend(phase3_trials)
-            logger.info(f"Got {len(phase3_trials)} Phase 3 trials from bulk search")
+            all_trials.extend(bulk_trials)
+            logger.info(f"Got {len(bulk_trials)} Phase 2/3 trials from bulk search")
         except Exception as e:
-            logger.error(f"Phase 3 bulk search failed: {e}")
+            logger.error(f"Bulk Phase 2/3 search failed: {e}")
 
         # Deduplicate by NCT ID
         seen_ncts = set()
