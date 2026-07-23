@@ -27,6 +27,7 @@ from shared.schemas.fundamentals import FundamentalScore
 from moat_scorer import compute_moat_score
 from public_screener import screen_public_equity
 from scoring_engine import compute_fundamental_score
+from shared.services.universe import latest_market_caps, order_smallest_first
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"), format="%(asctime)s | %(name)s | %(message)s")
 logger = logging.getLogger("screener.fundamentals")
@@ -176,8 +177,10 @@ async def run_screening_batch():
 
     async with AsyncSessionLocal() as session:
         entities = (await session.exec(
-            select(Entity).where(Entity.entity_type == "public").limit(1000)
+            select(Entity).where(Entity.entity_type == "public").limit(10000)
         )).all()
+        # Smallest first: a timeout must cut the mega-cap tail, not the gems.
+        entities = order_smallest_first(entities, await latest_market_caps(session))
         logger.info(f"Found {len(entities)} entities to screen")
 
         if not entities:
