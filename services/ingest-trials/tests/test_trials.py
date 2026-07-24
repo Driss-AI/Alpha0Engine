@@ -400,3 +400,45 @@ class TestMatchPrecision:
     def test_exact_short_name_still_allowed(self):
         # identical short names are fine (exact match path)
         assert _match_score("Xos, Inc.", "Xos, Inc.") == 1.0
+
+
+class TestOrphanPrune:
+    def test_prunes_false_match_keeps_current(self):
+        """A stale/false clinical_trial signal (NCT not in this run) is deleted;
+        current ones survive. Guard blocks pruning when too few current matches."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlmodel import SQLModel, select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+        from shared.schemas.signals import Signal
+        import main as trials_main
+
+        async def scenario(keep, floor_ok):
+            engine = create_async_engine("sqlite+aiosqlite://")
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+            async with AsyncSession(engine) as session:
+                # 60 legit current + 1 orphan false match (XOS)
+                for i in range(60):
+                    session.add(Signal(entity_id=f"E{i}", signal_type="clinical_trial",
+                                       signal_date=_dt(2027, 1, 1), value=0.8,
+                                       source="clinicaltrials_gov",
+                                       source_id=f"NCT{i:06d}", notes=""))
+                session.add(Signal(entity_id="XOS", signal_type="clinical_trial",
+                                   signal_date=_dt(2027, 1, 1), value=0.8,
+                                   source="clinicaltrials_gov",
+                                   source_id="NCT999999", notes="false match"))
+                await session.commit()
+                removed = await trials_main._prune_orphan_trial_signals(session, keep)
+                rows = (await session.exec(select(Signal))).all()
+                return removed, {r.source_id for r in rows}
+
+        keep = {f"NCT{i:06d}" for i in range(60)}  # 60 current, XOS orphan excluded
+        removed, remaining = asyncio.run(scenario(keep, True))
+        assert removed == 1
+        assert "NCT999999" not in remaining          # XOS orphan gone
+        assert "NCT000000" in remaining               # legit kept
+
+        # Guard: too few current matches → prune nothing (avoids wiping on bad fetch)
+        removed2, remaining2 = asyncio.run(scenario({"NCT000001"}, False))
+        assert removed2 == 0
+        assert "NCT999999" in remaining2
