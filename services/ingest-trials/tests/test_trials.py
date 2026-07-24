@@ -442,3 +442,50 @@ class TestOrphanPrune:
         removed2, remaining2 = asyncio.run(scenario({"NCT000001"}, False))
         assert removed2 == 0
         assert "NCT999999" in remaining2
+
+
+class TestOrphanCatalystPrune:
+    def test_prunes_false_calendar_catalyst_keeps_pinned_and_current(self):
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlmodel import SQLModel, select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+        from shared.schemas.catalyst_event import CatalystEvent
+        import main as trials_main
+
+        async def scenario():
+            engine = create_async_engine("sqlite+aiosqlite://")
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+            async with AsyncSession(engine) as session:
+                # 60 current trial catalysts (keep)
+                for i in range(60):
+                    session.add(CatalystEvent(
+                        ticker=f"BIO{i}", catalyst_type="trial_readout",
+                        title="readout", user_pinned=False,
+                        details={"bottleneck": "clinical_trial", "nct_id": f"NCT{i:06d}"}))
+                # false match — XOS trial catalyst (orphan, NCT not current)
+                session.add(CatalystEvent(
+                    ticker="XOS", catalyst_type="trial_readout", title="fake FDA",
+                    user_pinned=False,
+                    details={"bottleneck": "clinical_trial", "nct_id": "NCT999999"}))
+                # a user-pinned event with the same shape must SURVIVE
+                session.add(CatalystEvent(
+                    ticker="MINE", catalyst_type="trial_readout", title="my note",
+                    user_pinned=True,
+                    details={"bottleneck": "clinical_trial", "nct_id": "NCT999998"}))
+                # an FDA-sourced catalyst must be untouched
+                session.add(CatalystEvent(
+                    ticker="OTHR", catalyst_type="fda", title="pdufa",
+                    user_pinned=False, details={"bottleneck": "fda_decision"}))
+                await session.commit()
+                keep = {f"NCT{i:06d}" for i in range(60)}
+                removed = await trials_main._prune_orphan_trial_catalysts(session, keep)
+                rows = (await session.exec(select(CatalystEvent))).all()
+                return removed, {r.ticker for r in rows}
+
+        removed, tickers = asyncio.run(scenario())
+        assert removed == 1
+        assert "XOS" not in tickers        # false calendar catalyst gone
+        assert "MINE" in tickers           # user-pinned survives
+        assert "OTHR" in tickers           # non-trial catalyst untouched
+        assert "BIO0" in tickers           # current trial catalyst kept
