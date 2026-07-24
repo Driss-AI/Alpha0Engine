@@ -42,6 +42,12 @@ from shared.universe import (
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
 from stooq_fallback import fetch_stooq_quotes, fetch_sec_shares_outstanding
 from finnhub_quotes import fetch_finnhub_quotes, fetch_finnhub_profiles
+from fmp_data import (
+    fetch_fmp_float,
+    fetch_fmp_market_caps,
+    fetch_fmp_quotes,
+    is_configured as fmp_configured,
+)
 from volume_signals import detect_volume_signals
 
 logging.basicConfig(
@@ -198,17 +204,34 @@ async def run_price_ingestion():
             ticker_map[t] = e
             all_tickers.append(t)
 
+        # ── Step 0: FMP, when configured ───────────────────
+        # The only source here that returns real VOLUME for the whole universe,
+        # batched 100 symbols at a time. Everything below it is a fallback that
+        # exists because Yahoo blocks cloud IPs.
+        price_data: dict = {}
+        fmp_mcaps: dict = {}
+        if fmp_configured():
+            price_data.update(fetch_fmp_quotes(all_tickers))
+            fmp_mcaps = fetch_fmp_market_caps(list(price_data.keys()))
+            logger.info(f"Price coverage after FMP: {len(price_data)}/{len(all_tickers)}")
+        else:
+            logger.info("FMP_API_KEY not set — falling back to Yahoo/Stooq/Finnhub "
+                        "(no volume, no float: lenses 4 and 5 stay starved)")
+
         # ── Step 1: Batch fetch OHLCV ──────────────────────
-        logger.info(f"Fetching OHLCV for {len(all_tickers)} tickers...")
-        price_data = fetch_batch_prices(all_tickers, period="35d")
+        still_unpriced = [t for t in all_tickers if t not in price_data]
+        logger.info(f"Fetching OHLCV for {len(still_unpriced)} tickers...")
+        yahoo_tickers = set()
+        for _t, _recs in fetch_batch_prices(still_unpriced, period="35d").items():
+            price_data.setdefault(_t, _recs)
+            yahoo_tickers.add(_t)
         logger.info(f"Got price data for {len(price_data)} tickers")
 
         # ── Step 1b: Stooq fallback for whatever Yahoo blocked ──
         # Yahoo blocks cloud IPs wholesale some days (observed: 0 rows stored).
         # Stooq gives a keyless EOD snapshot for the missing tickers so the
         # engine never runs priceless.
-        yahoo_tickers = set(price_data.keys())
-        missing = [t for t in all_tickers if t not in yahoo_tickers]
+        missing = [t for t in all_tickers if t not in price_data]
         if missing:
             logger.info(f"Stooq fallback for {len(missing)} tickers Yahoo returned nothing for...")
             price_data.update(fetch_stooq_quotes(missing))
@@ -235,11 +258,17 @@ async def run_price_ingestion():
         active_tickers = sorted(yahoo_tickers)
         logger.info(f"Fetching market caps for {len(active_tickers)} yahoo-served tickers...")
 
-        mcap_data = {}
+        mcap_data = dict(fmp_mcaps)
         for i in range(0, len(active_tickers), MCAP_BATCH):
             batch = active_tickers[i:i + MCAP_BATCH]
-            batch_mcaps = fetch_market_caps(batch)
-            mcap_data.update(batch_mcaps)
+            # Merge field-wise: yfinance carries float/short that FMP's quote
+            # doesn't, but a blocked .info call returns blanks that must not
+            # wipe a market cap FMP already supplied.
+            for t, info in fetch_market_caps(batch).items():
+                merged = mcap_data.setdefault(t, {})
+                for k, v in info.items():
+                    if v is not None:
+                        merged[k] = v
             await asyncio.sleep(0.5)  # Rate limit
 
         logger.info(f"Got market cap data for {len(mcap_data)} tickers")
@@ -275,6 +304,27 @@ async def run_price_ingestion():
                            if mcap_data.get(t, {}).get("market_cap"))
             logger.info(f"Market-cap coverage after Finnhub profiles: "
                         f"{with_cap}/{len(price_data)} priced tickers")
+
+        # ── Step 2d: FMP float — the input lens 4 never had ─
+        # One call per symbol, so spend the budget on the smallest caps first:
+        # a tiny float is only interesting on a tiny company, and those are the
+        # names the engine exists to find.
+        if fmp_configured():
+            need_float = [t for t in price_data
+                          if not mcap_data.get(t, {}).get("float_shares")]
+            need_float.sort(
+                key=lambda t: mcap_data.get(t, {}).get("market_cap") or float("inf")
+            )
+            for t, info in fetch_fmp_float(need_float).items():
+                merged = mcap_data.setdefault(t, {})
+                for k, v in info.items():
+                    if v and not merged.get(k):
+                        merged[k] = v
+                merged["float_source"] = "fmp"
+            with_float = sum(1 for t in price_data
+                             if mcap_data.get(t, {}).get("float_shares"))
+            logger.info(f"Float coverage after FMP: "
+                        f"{with_float}/{len(price_data)} priced tickers")
 
         # ── Step 3: Store everything ───────────────────────
         total_stored = 0
@@ -340,9 +390,10 @@ async def run_price_ingestion():
                         ))
                         volume_signals_emitted += 1
 
-                # ── Float snapshot signal — real float/short interest from
-                # yfinance for the float-mechanics lens (and, over time, a
-                # float/short time series for backtests). One row per day.
+                # ── Float snapshot signal — real float/short interest for the
+                # float-mechanics lens (and, over time, a float/short time
+                # series for backtests). One row per day. Float comes from FMP
+                # where configured, else yfinance where it isn't blocked.
                 if mcap_info.get("float_shares") or mcap_info.get("shares_short"):
                     snap_date = datetime.utcnow().strftime("%Y-%m-%d")
                     src_id = f"float:{ticker}:{snap_date}"
@@ -365,7 +416,7 @@ async def run_price_ingestion():
                                 "short_pct_float": mcap_info.get("short_pct_float"),
                                 "days_to_cover": mcap_info.get("short_ratio"),
                                 "shares_outstanding": mcap_info.get("shares_outstanding"),
-                                "source": "yfinance",
+                                "source": mcap_info.get("float_source") or "yfinance",
                             },
                             source="ingest_prices",
                             source_id=src_id,
