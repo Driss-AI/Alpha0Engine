@@ -500,8 +500,16 @@ async def run_universe_discovery():
         ]
         logger.info(f"New tickers to evaluate: {len(new_entries)}")
 
+        # Reclassification must happen even when there is nothing new to add.
+        # The steady state IS "no new tickers" — every SEC symbol is already
+        # tracked — so returning early here left the security filter dead in
+        # production: it only ever applied to newly discovered tickers, and the
+        # thousands of warrants/units/ADRs already in the table kept getting
+        # scanned every run.
         if not new_entries:
             logger.info("No new tickers. Universe is up to date.")
+            reclassified = await reclassify_existing_universe(session)
+            logger.info(f"Existing entities reclassified: {reclassified}")
             return
 
         # Create entities directly from SEC ticker list.
