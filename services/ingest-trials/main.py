@@ -295,6 +295,38 @@ async def _upsert_trial_signal(
     return "created"
 
 
+async def _prune_orphan_trial_signals(
+    session: AsyncSession, keep_ncts: set,
+) -> int:
+    """Delete clinical_trial signals not backed by a current match.
+
+    Removes false matches from prior runs (e.g. a biotech trial once glued to
+    a truck maker) and now-stale readouts, so old bad data can't keep scoring.
+    Guarded by a floor so a failed/empty fetch can't wipe the whole table.
+    """
+    from sqlalchemy import delete as _delete, func as _func
+
+    total = (await session.exec(
+        select(_func.count()).select_from(Signal).where(
+            Signal.source == "clinicaltrials_gov",
+            Signal.signal_type == "clinical_trial",
+        )
+    )).one()
+    if len(keep_ncts) < 50 or len(keep_ncts) >= total:
+        # Too few current matches to trust (likely a bad fetch) — don't prune.
+        return 0
+
+    result = await session.exec(
+        _delete(Signal).where(
+            Signal.source == "clinicaltrials_gov",
+            Signal.signal_type == "clinical_trial",
+            Signal.source_id.notin_(keep_ncts),  # type: ignore[union-attr]
+        )
+    )
+    await session.commit()
+    return result.rowcount or 0
+
+
 async def run_trial_ingestion():
     """Main daily clinical trial ingestion."""
     logger.info("=" * 60)
@@ -365,6 +397,11 @@ async def run_trial_ingestion():
         unmatched = 0
         skipped_dupes = 0
         stale_skipped = 0
+        # NCTs that hold a valid, current clinical_trial signal after this run.
+        # Anything else in the table is an orphan from a prior run (a false
+        # match that no longer resolves, or a now-stale readout) and gets
+        # deleted at the end so old bad data can't linger in the scores.
+        persisted_ncts: set[str] = set()
         # A clinical_trial Signal is unique on (source, source_id, signal_type)
         # in the DB — NOT on entity_id. Two entities can fuzzy-match the same
         # trial sponsor, so track which NCTs we've already handled this run and
@@ -456,6 +493,7 @@ async def run_trial_ingestion():
                 session, nct_id=nct_id, entity_id=entity_id, signal_value=signal_value,
                 raw_data=raw_data, signal_date=signal_date, notes=notes,
             )
+            persisted_ncts.add(nct_id)
             if outcome == "updated":
                 signals_updated += 1
             else:
@@ -475,6 +513,8 @@ async def run_trial_ingestion():
 
         await _flush("final")
 
+        orphans_removed = await _prune_orphan_trial_signals(session, persisted_ncts)
+
         logger.info("=" * 60)
         logger.info(f"CLINICAL TRIAL INGESTION COMPLETE")
         logger.info(f"  Unique trials found: {len(unique_trials)}")
@@ -483,6 +523,7 @@ async def run_trial_ingestion():
         logger.info(f"  Duplicate trials skipped: {skipped_dupes}")
         logger.info(f"  Stale (past-readout) trials skipped: {stale_skipped}")
         logger.info(f"  Unmatched sponsors: {unmatched}")
+        logger.info(f"  Orphan signals pruned: {orphans_removed}")
         logger.info("=" * 60)
 
 
