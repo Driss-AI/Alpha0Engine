@@ -47,6 +47,11 @@ jobs:
             echo "== $svc"
             (cd "$svc" && python -m pytest tests/ -q --tb=short)
           done
+      - name: Pipeline orchestrator tests
+        env:
+          DATABASE_URL: sqlite+aiosqlite://
+        run: python -m pytest scripts/tests/ -q --tb=short
+
       - name: Catch-rate scoreboard (must be clean)
         run: python scripts/catch_rate.py
 
