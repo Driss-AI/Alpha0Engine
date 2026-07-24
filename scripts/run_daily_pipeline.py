@@ -162,11 +162,54 @@ async def _record_summary(results: list[StepResult]) -> None:
 
 # ── cli ───────────────────────────────────────────────────────────────────
 
+def _scoped_step_filter(env: str) -> str | None:
+    """Read a PIPELINE_ONLY / PIPELINE_SKIP filter, honouring a date scope.
+
+    These are one-off debugging switches, but they live on a *scheduled*
+    service, so one left behind silently guts every run that follows — a
+    production run once skipped universe discovery, prices, SEC, FDA and news
+    for weeks, scoring 10k names against stale data and reporting success.
+
+    So a value may be scoped to a single UTC day, exactly like
+    WIPE_DATA_BEFORE_RUN:
+
+        PIPELINE_ONLY=2026-07-24:ingest-trials,screener
+
+    Off that date the filter is ignored and the full pipeline runs. An
+    un-scoped value still works — for manual runs — but warns loudly, because
+    on a cron service it is almost always a leftover.
+    """
+    raw = (os.environ.get(env) or "").strip()
+    if not raw:
+        return None
+
+    scope, sep, steps = raw.partition(":")
+    if sep and _looks_like_date(scope):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if scope.strip() != today:
+            print(f"  (ignoring {env}={raw!r} — scoped to {scope.strip()}, today is {today})")
+            return None
+        return steps.strip() or None
+
+    print(f"  !! {env}={raw!r} is set with no date scope — every scheduled run "
+          f"will be filtered until it is removed. Prefer "
+          f"{env}=YYYY-MM-DD:<steps> for one-off runs.")
+    return raw
+
+
+def _looks_like_date(value: str) -> bool:
+    try:
+        datetime.strptime(value.strip(), "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--only", default=os.environ.get("PIPELINE_ONLY") or None,
+    p.add_argument("--only", default=_scoped_step_filter("PIPELINE_ONLY"),
                    help="Comma-separated step names to include (others skipped); env: PIPELINE_ONLY")
-    p.add_argument("--skip", default=os.environ.get("PIPELINE_SKIP") or None,
+    p.add_argument("--skip", default=_scoped_step_filter("PIPELINE_SKIP"),
                    help="Comma-separated step names to skip; env: PIPELINE_SKIP")
     p.add_argument("--dry-run", action="store_true", help="Print what would run, don't execute")
     p.add_argument("--continue-on-critical", action="store_true",
@@ -265,6 +308,16 @@ def main(argv: list[str] | None = None) -> int:
           f"in {total_time:.1f}s")
     if aborted_after:
         print(f"Pipeline aborted after critical failure in: {aborted_after}")
+
+    # A run that skipped its ingestion steps scored the whole universe against
+    # stale data — it is NOT a healthy run, even though nothing failed. Say so
+    # loudly rather than printing a clean summary and exiting 0 in silence.
+    skipped_critical = [r.step.name for r in results if r.skipped and r.step.critical]
+    if skipped_critical and not aborted_after:
+        print(f"\n  !! DEGRADED RUN — critical step(s) skipped by a filter: "
+              f"{', '.join(skipped_critical)}")
+        print(f"  !! The engine scored against whatever data was already in the "
+              f"database. Check PIPELINE_ONLY / PIPELINE_SKIP.")
 
     if not args.dry_run:
         try:
