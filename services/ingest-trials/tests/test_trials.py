@@ -489,3 +489,16 @@ class TestOrphanCatalystPrune:
         assert "MINE" in tickers           # user-pinned survives
         assert "OTHR" in tickers           # non-trial catalyst untouched
         assert "BIO0" in tickers           # current trial catalyst kept
+
+
+class TestSectorGate:
+    def test_non_medical_sectors_rejected(self):
+        from main import _sector_allows_trial
+        assert _sector_allows_trial("Healthcare") is True
+        assert _sector_allows_trial("Biotechnology") is True
+        assert _sector_allows_trial("Pharmaceuticals") is True
+        assert _sector_allows_trial(None) is True            # unknown allowed
+        assert _sector_allows_trial("") is True
+        assert _sector_allows_trial("Basic Materials") is False   # ATI Inc (metals)
+        assert _sector_allows_trial("Consumer Cyclical") is False  # XOS (autos)
+        assert _sector_allows_trial("Financial Services") is False

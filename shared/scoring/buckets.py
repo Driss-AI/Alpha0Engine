@@ -17,6 +17,11 @@ from .axes import AxisScores
 
 BUCKETS = ["NO_TOUCH", "PASS", "WATCH", "DEEP_DIVE", "SETUP_READY"]
 
+# The engine hunts *tiny* stocks that can multiply (the SPRB pattern). A large
+# company physically can't, so above this cap a name can never be a "gem" —
+# it's still scanned, just capped at PASS. Small-cap boundary ≈ $2B.
+MAX_GEM_MARKET_CAP_USD = 2e9
+
 # Display labels (the alert/UI form)
 BUCKET_LABELS = {
     "NO_TOUCH": "NO TOUCH",
@@ -33,6 +38,7 @@ def classify_bucket(
     has_critical_flag: bool = False,
     has_dated_catalyst: bool = False,
     lane_live_validated: bool = True,
+    market_cap_usd: float | None = None,
 ) -> str:
     """Classify a candidate into an action bucket.
 
@@ -50,6 +56,11 @@ def classify_bucket(
     # 1. Hard disqualifiers
     if has_critical_flag or axes.risk >= 80:
         return "NO_TOUCH"
+
+    # 1b. Too big to be a gem — a mega/large-cap can't multiply like a tiny
+    #     stock, so it never surfaces as promising (still scanned = PASS).
+    if market_cap_usd is not None and market_cap_usd > MAX_GEM_MARKET_CAP_USD:
+        return "PASS"
 
     # 2. No edge
     if axes.opportunity < 35:

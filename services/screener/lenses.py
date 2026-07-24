@@ -312,6 +312,7 @@ async def score_entity(
         has_critical_flag=red["has_critical"],
         has_dated_catalyst=catalyst_proximity is not None,
         lane_live_validated=lane_live_validated,
+        market_cap_usd=market_cap,
     )
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)

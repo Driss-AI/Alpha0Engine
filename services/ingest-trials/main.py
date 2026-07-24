@@ -70,6 +70,28 @@ def _is_biotech_entity(entity: Entity) -> bool:
     return any(kw in combined for kw in BIOTECH_SECTORS)
 
 
+# Sectors that make a drug-trial match impossible regardless of name. A company
+# whose sector is clearly non-medical (metals, autos, banks…) must never get a
+# clinical-trial catalyst — this stops exact-abbreviation collisions like
+# "ATI" (ATI Inc., specialty metals) or "XOS" (an EV truck maker).
+_HEALTH_SECTOR_HINTS = (
+    "health", "bio", "pharma", "medic", "therap", "drug", "clinic",
+    "genom", "life scien", "diagnost", "oncolog", "vaccine",
+)
+
+
+def _sector_allows_trial(sector: Optional[str]) -> bool:
+    """True if the entity's sector is unknown or plausibly medical.
+
+    Unknown sector is allowed (many small biotechs are unlabeled); a sector
+    that is present but has no medical hint is rejected.
+    """
+    if not sector or not sector.strip():
+        return True
+    s = sector.lower()
+    return any(h in s for h in _HEALTH_SECTOR_HINTS)
+
+
 def _compute_catalyst_proximity(trial: Dict[str, Any]) -> Optional[int]:
     """Compute days until the catalyst (primary completion date)."""
     pcd = trial.get("primary_completion_dt")
@@ -433,6 +455,7 @@ async def run_trial_ingestion():
         unmatched = 0
         skipped_dupes = 0
         stale_skipped = 0
+        wrong_sector = 0
         # NCTs that hold a valid, current clinical_trial signal after this run.
         # Anything else in the table is an orphan from a prior run (a false
         # match that no longer resolves, or a now-stale readout) and gets
@@ -468,6 +491,13 @@ async def run_trial_ingestion():
 
             if not matched:
                 unmatched += 1
+                continue
+
+            # Reject the match if the company's sector is clearly non-medical —
+            # a metals or auto company can't own a drug trial no matter how its
+            # name collides with the sponsor.
+            if not _sector_allows_trial(matched.get("sector")):
+                wrong_sector += 1
                 continue
 
             entity_id = matched["id"]
@@ -559,6 +589,7 @@ async def run_trial_ingestion():
         logger.info(f"  Signals updated: {signals_updated}")
         logger.info(f"  Duplicate trials skipped: {skipped_dupes}")
         logger.info(f"  Stale (past-readout) trials skipped: {stale_skipped}")
+        logger.info(f"  Non-medical sector rejected: {wrong_sector}")
         logger.info(f"  Unmatched sponsors: {unmatched}")
         logger.info(f"  Orphan signals pruned: {orphans_removed}")
         logger.info(f"  Orphan calendar catalysts pruned: {orphan_catalysts}")

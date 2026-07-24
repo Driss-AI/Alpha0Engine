@@ -58,6 +58,16 @@ def test_setup_ready_requires_dated_catalyst():
     assert classify_bucket(ax, has_dated_catalyst=False) != "SETUP_READY"
 
 
+def test_mega_cap_capped_at_pass():
+    """A large company can never be a gem, even with strong axes + a catalyst."""
+    ax = compute_axes(composite_score=0.85, active_lenses=4, market_cap_usd=180e6,
+                      catalyst_proximity_days=20, evidence_count=5,
+                      institutional_confirmation=True, volume_ratio=2.4)
+    # Same strong axes: tiny cap surfaces, BMY-size mega cap is capped at PASS.
+    assert classify_bucket(ax, has_dated_catalyst=True, market_cap_usd=120e6) != "PASS"
+    assert classify_bucket(ax, has_dated_catalyst=True, market_cap_usd=90e9) == "PASS"
+
+
 def test_low_opportunity_is_pass():
     ax = compute_axes(composite_score=0.1, active_lenses=1, market_cap_usd=5e9)
     assert classify_bucket(ax, has_dated_catalyst=False) == "PASS"
