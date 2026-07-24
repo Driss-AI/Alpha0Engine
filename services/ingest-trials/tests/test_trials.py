@@ -285,7 +285,7 @@ class TestRetry:
                 return Resp(429) if self.n < 3 else Resp(200)
 
         monkeypatch.setattr(ct_client.asyncio, "sleep", fake_sleep)
-        resp = asyncio.get_event_loop().run_until_complete(
+        resp = asyncio.run(
             _get_with_retry(FakeClient(), {})
         )
         assert resp.status_code == 200
@@ -325,7 +325,7 @@ class TestTrialSignalUpsert:
                 )).all()
                 return o1, o2, rows
 
-        o1, o2, rows = asyncio.get_event_loop().run_until_complete(scenario())
+        o1, o2, rows = asyncio.run(scenario())
         assert o1 == "created"
         assert o2 == "updated"              # second match updates, not inserts
         assert len(rows) == 1               # exactly one signal survives
@@ -371,7 +371,7 @@ class TestPersistClinicalTrial:
                 cats = (await session.exec(select(CatalystEvent))).all()
                 return ct, cats
 
-        ct, cats = asyncio.get_event_loop().run_until_complete(scenario())
+        ct, cats = asyncio.run(scenario())
         assert len(ct) == 1
         assert ct[0].intervention == "DrugX, Placebo"   # names joined, not dicts
         assert len(cats) == 1                            # catalyst emitted (calendar date)

@@ -18,6 +18,10 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
+# A dated catalyst more than ~2 months past is a completed event, not a
+# forward one — exclude it so stale trial readouts don't inflate the score.
+STALE_CATALYST_DAYS = -60
+
 # ── Catalyst type weights (how binary is the event?) ────────
 CATALYST_WEIGHTS = {
     "fda_approval": 1.0,
@@ -238,12 +242,20 @@ def score_binary_catalyst(
     if filing_text:
         catalysts.extend(detect_catalysts_from_filings(filing_text))
 
+    # Drop catalysts whose dated readout is well in the past — a completed
+    # event is not a FORWARD catalyst and must not lend its quality weight to
+    # the score. Undated catalysts (days_until None) are kept (pipeline/text).
+    catalysts = [
+        c for c in catalysts
+        if c.get("days_until") is None or c["days_until"] >= STALE_CATALYST_DAYS
+    ]
+
     if not catalysts:
         return {
             "catalyst_score": 0.0,
             "catalyst_type": None,
             "catalyst_proximity_days": None,
-            "catalyst_details": {"reason": "no_catalysts_detected"},
+            "catalyst_details": {"reason": "no_forward_catalysts"},
         }
 
     # Find the strongest catalyst
