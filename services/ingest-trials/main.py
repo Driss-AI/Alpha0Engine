@@ -327,6 +327,42 @@ async def _prune_orphan_trial_signals(
     return result.rowcount or 0
 
 
+async def _prune_orphan_trial_catalysts(
+    session: AsyncSession, keep_ncts: set,
+) -> int:
+    """Delete trial-derived catalyst_events not backed by a current match.
+
+    Companion to the signal prune: clears the CALENDAR of false/stale trial
+    catalysts (e.g. an FDA date wrongly pinned to a truck maker). Only touches
+    clinical-trial-sourced, non-user-pinned events; never FDA/8-K/news or
+    anything the user pinned. Same floor guard against a bad fetch.
+    """
+    from shared.schemas.catalyst_event import CatalystEvent
+
+    if len(keep_ncts) < 50:
+        return 0
+
+    rows = (await session.exec(
+        select(CatalystEvent).where(
+            CatalystEvent.catalyst_type.in_(("trial_readout", "phase_advance")),  # type: ignore[union-attr]
+            CatalystEvent.user_pinned == False,  # noqa: E712
+        )
+    )).all()
+
+    removed = 0
+    for row in rows:
+        details = row.details or {}
+        if details.get("bottleneck") != "clinical_trial":
+            continue  # not trial-sourced — leave it alone
+        nct = details.get("nct_id")
+        if not nct or nct not in keep_ncts:
+            await session.delete(row)
+            removed += 1
+    if removed:
+        await session.commit()
+    return removed
+
+
 async def run_trial_ingestion():
     """Main daily clinical trial ingestion."""
     logger.info("=" * 60)
@@ -514,6 +550,7 @@ async def run_trial_ingestion():
         await _flush("final")
 
         orphans_removed = await _prune_orphan_trial_signals(session, persisted_ncts)
+        orphan_catalysts = await _prune_orphan_trial_catalysts(session, persisted_ncts)
 
         logger.info("=" * 60)
         logger.info(f"CLINICAL TRIAL INGESTION COMPLETE")
@@ -524,6 +561,7 @@ async def run_trial_ingestion():
         logger.info(f"  Stale (past-readout) trials skipped: {stale_skipped}")
         logger.info(f"  Unmatched sponsors: {unmatched}")
         logger.info(f"  Orphan signals pruned: {orphans_removed}")
+        logger.info(f"  Orphan calendar catalysts pruned: {orphan_catalysts}")
         logger.info("=" * 60)
 
 
