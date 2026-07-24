@@ -32,6 +32,12 @@ from shared.schemas.daily_prices import DailyPrice
 from shared.schemas.fundamentals import FundamentalScore
 from shared.schemas.equity_screen import EquityScreen
 from shared.schemas.signals import Signal
+from shared.universe import (
+    EXCLUDED_ENTITY_TYPE,
+    SCANNABLE_ENTITY_TYPE,
+    classify_security,
+    entity_type_for,
+)
 
 from price_fetcher import fetch_batch_prices, fetch_market_caps, fetch_universe_tickers_sec
 from stooq_fallback import fetch_stooq_quotes, fetch_sec_shares_outstanding
@@ -451,20 +457,30 @@ async def run_universe_discovery():
         # No price filtering here — daily price ingestion handles that.
         # This ensures the entity table is populated so all other
         # pipelines (Form 4, trials, 8-K, screener) have data to work with.
+        #
+        # Securities that can never be a micro-cap explosion candidate (SPAC
+        # warrants/units/rights, preferreds, unsponsored foreign ADRs) are still
+        # recorded, but with an entity_type the scanners don't select — so they
+        # never consume screener time or the capped Finnhub price budget.
         created = 0
+        excluded = 0
         for entry in new_entries[:UNIVERSE_MAX]:
             ticker = entry["ticker"].upper().strip()
             if not ticker or len(ticker) > 10:
                 continue
+            name = entry.get("company_name") or ticker
+            etype = entity_type_for(ticker, name)
             try:
                 entity = Entity(
-                    name=entry.get("company_name") or ticker,
+                    name=name,
                     ticker=ticker,
                     cik=entry.get("cik"),
-                    entity_type="public",
+                    entity_type=etype,
                 )
                 session.add(entity)
                 created += 1
+                if etype == EXCLUDED_ENTITY_TYPE:
+                    excluded += 1
             except Exception as e:
                 logger.debug(f"Entity creation failed for {ticker}: {e}")
 
@@ -475,12 +491,55 @@ async def run_universe_discovery():
 
         await session.commit()
 
+        reclassified = await reclassify_existing_universe(session)
+
         logger.info("=" * 60)
         logger.info(f"UNIVERSE DISCOVERY COMPLETE")
         logger.info(f"  SEC universe: {len(sec_tickers)}")
         logger.info(f"  Already tracked: {len(existing_tickers)}")
-        logger.info(f"  New entities created: {created}")
+        logger.info(f"  New entities created: {created} "
+                    f"({created - excluded} scannable, {excluded} excluded)")
+        logger.info(f"  Existing entities reclassified: {reclassified}")
         logger.info("=" * 60)
+
+
+async def reclassify_existing_universe(session: AsyncSession) -> int:
+    """Re-apply the security filter to entities already in the database.
+
+    Discovery used to store every SEC ticker as `public`, so the table still
+    holds thousands of warrants, units, rights and ADRs that the screener dutifully
+    scores every run. This corrects them in place (both directions, so a security
+    wrongly excluded by an earlier rule is restored once the rule improves).
+    """
+    rows = (await session.exec(
+        select(Entity).where(Entity.ticker.isnot(None))  # type: ignore[union-attr]
+    )).all()
+
+    changed = 0
+    by_reason: dict[str, int] = {}
+    for ent in rows:
+        want = entity_type_for(ent.ticker, ent.name)
+        # Only ever move between the two types this filter owns — never clobber
+        # a hand-set type like "private".
+        if ent.entity_type not in (SCANNABLE_ENTITY_TYPE, EXCLUDED_ENTITY_TYPE):
+            continue
+        if ent.entity_type == want:
+            continue
+        if want == EXCLUDED_ENTITY_TYPE:
+            reason = classify_security(ent.ticker, ent.name)
+            by_reason[reason] = by_reason.get(reason, 0) + 1
+        else:
+            by_reason["restored"] = by_reason.get("restored", 0) + 1
+        ent.entity_type = want
+        session.add(ent)
+        changed += 1
+        if changed % 500 == 0:
+            await session.commit()
+
+    await session.commit()
+    if changed:
+        logger.info(f"  Reclassified {changed} existing entities: {by_reason}")
+    return changed
 
 
 # ═══════════════════════════════════════════════════════════
