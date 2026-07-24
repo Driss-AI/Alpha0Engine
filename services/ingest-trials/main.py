@@ -57,6 +57,9 @@ BIOTECH_SECTORS = [
 ]
 
 CT_RATE_DELAY = 1.0  # Seconds between CT.gov API calls (the endpoint 429s easily)
+# A dated readout more than ~2 months in the past is history, not a forward
+# catalyst. (Grace window covers "just completed, topline data still pending".)
+STALE_TRIAL_DAYS = -60
 
 
 def _is_biotech_entity(entity: Entity) -> bool:
@@ -361,6 +364,7 @@ async def run_trial_ingestion():
         signals_updated = 0
         unmatched = 0
         skipped_dupes = 0
+        stale_skipped = 0
         # A clinical_trial Signal is unique on (source, source_id, signal_type)
         # in the DB — NOT on entity_id. Two entities can fuzzy-match the same
         # trial sponsor, so track which NCTs we've already handled this run and
@@ -404,6 +408,13 @@ async def run_trial_ingestion():
 
             # Compute catalyst data
             proximity_days = _compute_catalyst_proximity(trial)
+            # A trial whose readout already happened (well in the past) is NOT a
+            # forward catalyst. Skip stale completions so a 2006 Phase 3 at
+            # -7000 days can't masquerade as an upcoming "big event". Undated
+            # trials (proximity None) are kept as pipeline-progress signals.
+            if proximity_days is not None and proximity_days < STALE_TRIAL_DAYS:
+                stale_skipped += 1
+                continue
             signal_value = _compute_signal_value(trial, proximity_days)
             catalyst_type = _classify_catalyst_type(trial)
 
@@ -470,6 +481,7 @@ async def run_trial_ingestion():
         logger.info(f"  Signals created: {signals_created}")
         logger.info(f"  Signals updated: {signals_updated}")
         logger.info(f"  Duplicate trials skipped: {skipped_dupes}")
+        logger.info(f"  Stale (past-readout) trials skipped: {stale_skipped}")
         logger.info(f"  Unmatched sponsors: {unmatched}")
         logger.info("=" * 60)
 
