@@ -330,3 +330,49 @@ class TestTrialSignalUpsert:
         assert o2 == "updated"              # second match updates, not inserts
         assert len(rows) == 1               # exactly one signal survives
         assert rows[0].entity_id == "ENT_B"  # re-pointed to the latest match
+
+
+class TestPersistClinicalTrial:
+    def test_dict_interventions_persist_and_emit_catalyst(self):
+        """Interventions arrive as dicts; persist must not crash and must emit a catalyst."""
+        from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlmodel import SQLModel, select
+        from sqlmodel.ext.asyncio.session import AsyncSession
+        from shared.schemas.clinical_trial import ClinicalTrial
+        from shared.schemas.catalyst_event import CatalystEvent
+        import main as trials_main
+
+        trial = {
+            "nct_id": "NCT01920711",
+            "title": "A Phase 3 study of DrugX",
+            "phase": "PHASE3",
+            "status": "ACTIVE_NOT_RECRUITING",
+            "lead_sponsor": "Spruce Bio",
+            "conditions": ["Solid Tumors", "Melanoma"],
+            "interventions": [
+                {"name": "DrugX", "type": "DRUG", "description": "the asset"},
+                {"name": "Placebo", "type": "OTHER", "description": ""},
+            ],
+            "primary_completion_dt": _dt(2027, 3, 1),
+            "enrollment": 120,
+        }
+
+        async def scenario():
+            engine = create_async_engine("sqlite+aiosqlite://")
+            async with engine.begin() as conn:
+                await conn.run_sync(SQLModel.metadata.create_all)
+            async with AsyncSession(engine) as session:
+                await trials_main._persist_clinical_trial(
+                    session, trial=trial, entity_id="ENT_A",
+                    ticker="SPRB", company="Spruce Bio", proximity_days=220,
+                )
+                await session.commit()  # crashed here under the old str-join bug
+                ct = (await session.exec(select(ClinicalTrial))).all()
+                cats = (await session.exec(select(CatalystEvent))).all()
+                return ct, cats
+
+        ct, cats = asyncio.get_event_loop().run_until_complete(scenario())
+        assert len(ct) == 1
+        assert ct[0].intervention == "DrugX, Placebo"   # names joined, not dicts
+        assert len(cats) == 1                            # catalyst emitted (calendar date)
+        assert cats[0].ticker == "SPRB"
