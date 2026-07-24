@@ -154,6 +154,23 @@ label.lbl{font-size:12.5px;font-weight:700;color:var(--ink2);display:block;margi
 .mover-row:last-child{border-bottom:none;}
 .up{color:var(--good);font-weight:800;}
 .down{color:var(--bad);font-weight:800;}
+
+/* ── Price & potential ── */
+.proj-now{font-size:14px;color:var(--ink2);margin:2px 0 10px;}
+.proj-now b{font-size:20px;color:var(--ink);font-weight:800;margin:0 4px;}
+.proj-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.proj-box{border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+.proj-box.bull{background:var(--good-soft);border-color:transparent;}
+.proj-box.bear{background:var(--bad-soft);border-color:transparent;}
+.proj-h{font-size:12px;font-weight:750;text-transform:uppercase;letter-spacing:.02em;}
+.proj-box.bull .proj-h{color:var(--good);}
+.proj-box.bear .proj-h{color:var(--bad);}
+.proj-range{font-size:18px;font-weight:800;margin-top:4px;}
+.proj-x{font-size:12.5px;color:var(--ink2);margin-top:1px;}
+.proj-why{list-style:none;margin:12px 0 0;padding:0;}
+.proj-why li{font-size:13px;color:var(--ink);padding:5px 0;border-bottom:1px solid var(--line);}
+.proj-why li:last-child{border-bottom:none;}
+.proj-disc{font-size:12.5px;color:var(--warn);background:var(--warn-soft);border-radius:10px;padding:10px 12px;margin-top:12px;line-height:1.5;}
 </style>
 </head>
 <body>
@@ -699,14 +716,84 @@ function renderAvoid(){
       </div>`;}).join('')}</div>`:''}`;
 }
 
+/* ── Price & potential (transparent scenario model) ── */
+function money(v){
+  if(v==null||isNaN(v))return'—';
+  if(v>=100)return'$'+v.toFixed(0);
+  if(v>=1)return'$'+v.toFixed(2);
+  return'$'+v.toFixed(3);
+}
+// Rule-based scenario ranges. NOT a prediction — a transparent "what if the
+// catalyst hits / misses" bracket driven by the same signals the scout scores.
+function projectPrice(d,price){
+  if(!price||price<=0)return null;
+  const cat=(d.lens_1_binary_catalyst&&d.lens_1_binary_catalyst.score)||0;
+  const comp=d.composite_score||0;
+  const fl=d.lens_4_float_mechanics||{};
+  const squeeze=fl.squeeze_potential||0;
+  const mcap=d.market_cap_usd||0;
+  const hasCat=cat>=0.4;
+  const strength=0.45*comp+0.55*cat;                         // 0..1 setup quality
+  const headroom=mcap>0?Math.max(0.15,Math.min(1,(600e6-mcap)/600e6)):0.6; // small=more room
+  const lowMult=1+strength*(hasCat?1.2:0.5);
+  const highMult=lowMult+headroom*(hasCat?2.5:0.9)+squeeze*2.0*headroom;
+  return{
+    price,hasCat,cat,squeeze,mcap,
+    floatShares:fl.float_shares,shortPct:fl.short_pct_float,
+    proxDays:d.lens_1_binary_catalyst&&d.lens_1_binary_catalyst.proximity_days,
+    catName:CATALYST_NAMES[d.lens_1_binary_catalyst&&d.lens_1_binary_catalyst.type]||'its big decision',
+    bullLow:price*Math.min(lowMult,5),
+    bullHigh:price*Math.min(highMult,12),
+    bearHigh:price*(hasCat?0.55:0.75),
+    bearLow:price*(hasCat?0.20:0.50),
+  };
+}
+function projReasons(pj,flagList){
+  const up=[],down=[];
+  if(pj.hasCat)up.push(`📅 If <b>${esc(pj.catName)}</b> goes well${pj.proxDays!=null&&pj.proxDays>=0?' ('+esc(inDaysText(pj.proxDays))+')':''}, the stock can re-rate sharply.`);
+  else up.push('📈 Mostly a steady-improvement story — slower, smaller upside than a catalyst play.');
+  if(pj.floatShares&&pj.floatShares<2e7)up.push(`🚀 Only ${esc(shortNum(pj.floatShares))} shares trade freely, so real buying overshoots fast.`);
+  if(pj.squeeze>=0.5||(pj.shortPct&&pj.shortPct>=0.15))up.push('🔥 Heavy bets against it can be forced to buy back — extra fuel on good news.');
+  if(pj.mcap&&pj.mcap<300e6)up.push(`🏢 At ${esc(usd(pj.mcap))} it's small enough to multiply before it's a "big" company.`);
+  if(pj.hasCat)down.push(`⚠️ If <b>${esc(pj.catName)}</b> disappoints, one-day drops of 50–80% are common for stocks like this.`);
+  else down.push('⚠️ Without a dated catalyst, gains can quietly fade if the story stalls.');
+  (flagList||[]).forEach(f=>down.push(esc(FLAGS[f]||('⚠️ '+f.replace(/_/g,' ')))));
+  down.push('⚠️ Tiny stocks get hard to sell fast when everyone rushes the exit.');
+  return[...up,...down].map(t=>`<li>${t}</li>`).join('');
+}
+function priceSectionHTML(pj,flagList){
+  if(!pj)return`<div class="h2" style="margin-top:16px;font-size:15px">💵 Price & potential</div>
+    <p class="note">The scout doesn't have a live price for this one yet — it fills in on the next daily scan.</p>`;
+  const bx=(pj.bullLow/pj.price),bX=(pj.bullHigh/pj.price);
+  const dHi=Math.round((1-pj.bearLow/pj.price)*100),dLo=Math.round((1-pj.bearHigh/pj.price)*100);
+  return`<div class="h2" style="margin-top:16px;font-size:15px">💵 Price & potential</div>
+  <div class="proj-now">Trading around <b>${money(pj.price)}</b> today</div>
+  <div class="proj-cols">
+    <div class="proj-box bull"><div class="proj-h">🎯 If it goes right</div>
+      <div class="proj-range">${money(pj.bullLow)} – ${money(pj.bullHigh)}</div>
+      <div class="proj-x">about ${bx.toFixed(1)}× – ${bX.toFixed(1)}× from here</div></div>
+    <div class="proj-box bear"><div class="proj-h">🛑 If it goes wrong</div>
+      <div class="proj-range">${money(pj.bearLow)} – ${money(pj.bearHigh)}</div>
+      <div class="proj-x">about −${dLo}% to −${dHi}%</div></div>
+  </div>
+  <ul class="proj-why">${projReasons(pj,flagList)}</ul>
+  <div class="proj-disc">⚠️ These are <b>what-if scenarios, not predictions</b>. A dated catalyst can go either way and small stocks move violently — the scout is showing you the shape of the bet, not a promise. Never risk money you can't afford to lose.</div>`;
+}
+
 /* ── Detail sheet ── */
 function closeDetail(){$('#detailOverlay').classList.remove('show');}
 async function openDetail(ticker){
   const ov=$('#detailOverlay');const sheet=$('#detailSheet');
   ov.classList.add('show');
   sheet.innerHTML='<div class="loading"><div class="spin"></div>Getting the full story on '+esc(ticker)+'…</div>';
-  let d;
-  try{d=await api('/api/v1/1000x/'+encodeURIComponent(ticker));}
+  let d,priceInfo=null;
+  try{
+    const[dd,pr]=await Promise.all([
+      api('/api/v1/1000x/'+encodeURIComponent(ticker)),
+      api('/api/v1/prices/'+encodeURIComponent(ticker)).catch(()=>null),
+    ]);
+    d=dd;priceInfo=pr&&pr.latest?pr.latest:null;
+  }
   catch(e){sheet.innerHTML=`<div class="sheet-head"><div style="font-size:17px;font-weight:800">${esc(ticker)}</div>
     <button class="icon-btn" onclick="closeDetail()">✕</button></div>
     <div class="empty">The scout has no detailed file on this one yet.</div>`;return;}
@@ -715,6 +802,8 @@ async function openDetail(ticker){
   const p=pts(d.composite_score);
   const flags=flagChips(row).map(c=>`<span class="chip ${c.cls}">${esc(c.t)}</span>`).join('');
   const followed=watchedTickers().has(ticker);
+  const flagList=flagsOf(row).flags;
+  const pj=projectPrice(d,priceInfo&&priceInfo.close);
   const checks=CHECKS.map(c=>{
     const lens=d[c.key]||{};const s=lens.score||0;const sp=pts(s);
     const pass=s>=0.6;const some=s>=0.3;
@@ -750,6 +839,7 @@ async function openDetail(ticker){
   <div class="meter"><div class="meter-track"><div class="meter-fill" style="width:${p}%;background:${meterColor(p)}"></div></div><div class="meter-num">${p}/100 strength</div></div>
   <p class="note">${esc(VERDICT[v].desc)} ${d.market_cap_usd?'Company size: '+usd(d.market_cap_usd)+'.':''}</p>
   ${flags?`<div class="chips">${flags}</div>`:''}
+  ${priceSectionHTML(pj,flagList)}
   <div class="h2" style="margin-top:16px;font-size:15px">The 5 questions the scout asks</div>
   ${checks}
   ${d.screening_notes?`<p class="note" style="margin-top:12px">🗒️ Scout's note: ${esc(d.screening_notes)}</p>`:''}
