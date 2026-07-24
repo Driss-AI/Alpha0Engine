@@ -376,3 +376,27 @@ class TestPersistClinicalTrial:
         assert ct[0].intervention == "DrugX, Placebo"   # names joined, not dicts
         assert len(cats) == 1                            # catalyst emitted (calendar date)
         assert cats[0].ticker == "SPRB"
+
+
+class TestMatchPrecision:
+    def test_short_ticker_name_does_not_false_match(self):
+        # Xos, Inc. (EV truck maker) must NOT match biotech sponsors that merely
+        # contain the letters "xos".
+        assert _match_score("Exosome Diagnostics, Inc.", "Xos, Inc.") < 0.6
+        assert _match_score("Exoxemis, Inc.", "Xos, Inc.") < 0.6
+        assert _match_score("BioXcel Therapeutics", "Xos, Inc.") < 0.6
+
+    def test_real_biotech_still_matches(self):
+        assert _match_score("UroGen Pharmaceuticals, Inc.", "UroGen Pharmaceuticals") >= 0.9
+        assert _match_score("Candel Therapeutics, Inc.", "Candel Therapeutics, Inc.") == 1.0
+        assert _match_score("Beam Therapeutics Inc.", "Beam Therapeutics") >= 0.9
+
+    def test_word_boundary_containment(self):
+        # extra corporate words still match at word boundaries
+        assert _match_score("Arcturus Therapeutics Holdings Inc.", "Arcturus Therapeutics") >= 0.9
+        # a shared distinctive word matches; unrelated short fragments do not
+        assert _match_score("Structure Therapeutics Inc.", "Structure Therapeutics") >= 0.9
+
+    def test_exact_short_name_still_allowed(self):
+        # identical short names are fine (exact match path)
+        assert _match_score("Xos, Inc.", "Xos, Inc.") == 1.0
