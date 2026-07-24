@@ -210,8 +210,12 @@ async def _persist_clinical_trial(
         company=company,
         phase=trial.get("phase"),
         status=trial.get("status"),
-        condition=", ".join(conditions[:3]) if conditions else None,
-        intervention=", ".join(interventions[:3]) if interventions else None,
+        condition=", ".join(str(c) for c in conditions[:3]) if conditions else None,
+        # interventions from CT.gov v2 are dicts ({name,type,description}); join their names.
+        intervention=", ".join(
+            i.get("name", "") if isinstance(i, dict) else str(i)
+            for i in interventions[:3]
+        ).strip(", ") or None if interventions else None,
         primary_completion_date=trial.get("primary_completion_dt"),
         study_completion_date=trial.get("completion_dt"),
         catalyst_proximity_days=proximity_days,
