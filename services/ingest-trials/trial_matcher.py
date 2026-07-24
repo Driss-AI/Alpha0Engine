@@ -51,15 +51,25 @@ def _match_score(sponsor: str, entity_name: str) -> float:
     if s_norm == e_norm:
         return 1.0
 
-    # One contains the other
-    if s_norm in e_norm or e_norm in s_norm:
-        shorter = min(len(s_norm), len(e_norm))
-        longer = max(len(s_norm), len(e_norm))
-        return 0.7 + 0.3 * (shorter / longer)
+    # Short names must match EXACTLY — otherwise a 3-letter ticker-name like
+    # "xos" (Xos, Inc., an EV truck maker) fuzzy-matches biotech sponsors that
+    # merely contain those letters (e.g. "Exosome…") and gets a bogus FDA
+    # catalyst. Below this length, only the exact match above counts.
+    if min(len(s_norm), len(e_norm)) < 5:
+        return 0.0
 
-    # Word overlap
-    s_words = set(s_norm.split())
-    e_words = set(e_norm.split())
+    # Whole-name containment at a WORD boundary (not an arbitrary substring):
+    # "xos" inside "exosome" must NOT count; "acacia research" inside
+    # "acacia research corp" should.
+    shorter, longer = sorted([s_norm, e_norm], key=len)
+    if re.search(rf"\b{re.escape(shorter)}\b", longer):
+        return 0.7 + 0.3 * (len(shorter) / len(longer))
+
+    # Word overlap — only on distinctive words (≥4 chars). Generic suffixes
+    # like "pharmaceuticals"/"therapeutics" are already stripped by _normalize,
+    # so this keys on the real company name, not boilerplate.
+    s_words = {w for w in s_norm.split() if len(w) >= 4}
+    e_words = {w for w in e_norm.split() if len(w) >= 4}
     if not s_words or not e_words:
         return 0.0
 
