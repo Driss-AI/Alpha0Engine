@@ -109,6 +109,13 @@ def setup_logging(service_name: str, level: Optional[str] = None):
 
     root.addHandler(handler)
 
+    # httpx logs every request line at INFO, and our upstreams take their
+    # credentials in the query string — so FMP_API_KEY and FINNHUB_API_KEY end
+    # up in plaintext in the deploy logs. Anything worth knowing about a call
+    # (status, retry, abandonment) is logged by the caller instead.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
     old_factory = logging.getLogRecordFactory()
 
     def record_factory(*args, **kwargs):

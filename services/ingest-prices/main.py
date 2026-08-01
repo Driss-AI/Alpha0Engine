@@ -54,6 +54,10 @@ logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(name)s | %(message)s",
 )
+# Keep API keys out of the logs: httpx logs full request URLs at INFO, and both
+# FMP and Finnhub authenticate via a query parameter.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 logger = logging.getLogger("ingest-prices")
 
 PRICE_BATCH = 80       # tickers per yfinance batch

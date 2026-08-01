@@ -120,3 +120,109 @@ class TestFloatIsGenuineOrAbsent:
         """`freeFloat` is a percent; treating 30.2 as a share count is nonsense."""
         self._fake_float_response(monkeypatch, [{"symbol": "SPRB", "freeFloat": 30.2}])
         assert fetch_fmp_float(["SPRB"]) == {}
+
+
+class _ScriptedClient:
+    """httpx.Client stub that replays a fixed list of (status, body) pairs.
+
+    The last entry repeats, so a test can say "then 429 forever" without
+    knowing how many calls the code under test will make.
+    """
+
+    calls: list = []
+    script: list = []
+
+    def __init__(self, *a, **k):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def get(self, url, params=None, **k):
+        i = min(len(type(self).calls), len(type(self).script) - 1)
+        status, body = type(self).script[i]
+        type(self).calls.append(params or {})
+
+        class _Resp:
+            status_code = status
+            text = str(body)
+
+            def json(self):
+                return body
+
+        return _Resp()
+
+
+@pytest.fixture
+def scripted(monkeypatch):
+    """Install the scripted client and make sleeps free."""
+    def _install(script):
+        _ScriptedClient.calls = []
+        _ScriptedClient.script = script
+        monkeypatch.setenv("FMP_API_KEY", "abc123")
+        monkeypatch.setattr(fmp_data.httpx, "Client", _ScriptedClient)
+        monkeypatch.setattr(fmp_data.time, "sleep", lambda *_: None)
+        return _ScriptedClient
+    return _install
+
+
+class TestRateLimitIsBounded:
+    """A spent quota must end the phase, not stall the pipeline.
+
+    A 20s sleep per ticker across a 1797-name float list is ~10 hours; the run
+    that exposed this was killed at the 90-minute pipeline timeout with every
+    downstream step skipped.
+    """
+
+    LIMIT = (429, {"Error Message": "Limit Reach . Please upgrade your plan"})
+
+    def test_float_gives_up_after_bounded_retries(self, scripted):
+        client = scripted([self.LIMIT])
+        assert fetch_fmp_float(["AAA", "BBB", "CCC"]) == {}
+        # One ticker's worth of retries, then the phase stops — the second and
+        # third tickers are never attempted.
+        assert len(client.calls) == fmp_data.MAX_RATE_LIMIT_RETRIES + 1
+
+    def test_quotes_give_up_after_bounded_retries(self, scripted):
+        client = scripted([self.LIMIT])
+        assert fetch_fmp_quotes(["AAA", "BBB"]) == {}
+        assert len(client.calls) == fmp_data.MAX_RATE_LIMIT_RETRIES + 1
+
+    def test_a_transient_429_is_retried_then_succeeds(self, scripted):
+        """A per-minute burst is worth waiting out — only a spent quota is not."""
+        scripted([
+            self.LIMIT,
+            (200, [{"symbol": "SPRB", "floatShares": 12_400_000,
+                    "outstandingShares": 41_000_000}]),
+        ])
+        out = fetch_fmp_float(["SPRB"])
+        assert out["SPRB"]["float_shares"] == 12_400_000
+
+
+class TestPlanRejectionStopsImmediately:
+    """402/401/403 will not change within a run; asking 91 more times is waste."""
+
+    def test_payment_required_aborts_on_the_first_batch(self, scripted):
+        client = scripted([
+            (402, {"Error Message": "Special Endpoint : Please upgrade your plan"}),
+        ])
+        tickers = [f"T{i}" for i in range(fmp_data.QUOTE_BATCH * 3)]
+        assert fetch_fmp_quotes(tickers) == {}
+        assert len(client.calls) == 1
+
+    def test_rejected_key_aborts_float_immediately(self, scripted):
+        client = scripted([(401, {"Error Message": "Invalid API KEY."})])
+        assert fetch_fmp_float(["AAA", "BBB", "CCC"]) == {}
+        assert len(client.calls) == 1
+
+    def test_a_one_off_server_error_does_not_abort_the_phase(self, scripted):
+        """500 is not terminal — the next batch still gets its chance."""
+        scripted([
+            (500, {"error": "boom"}),
+            (200, [{"symbol": "SPRB", "price": 3.42, "volume": 1_000}]),
+        ])
+        out = fetch_fmp_quotes([f"T{i}" for i in range(fmp_data.QUOTE_BATCH + 1)])
+        assert "SPRB" in out

@@ -12,8 +12,14 @@ With 2 of 5 lenses scoring ~0 for every name, nothing could reach conviction —
 the last full scan produced CONVICTION 0, HIGH 0 and 0 alertable candidates.
 
 FMP fixes that in two calls per batch:
-  - /stable/batch-quote   → price, VOLUME, avgVolume, marketCap (100/call)
+  - /stable/batch-quote   → price, VOLUME, marketCap (100/call). Note that the
+    documented response carries no avgVolume and no sharesOutstanding; both are
+    still read tolerantly for the endpoints that do return them.
   - /stable/shares-float  → float shares + shares outstanding
+
+/stable/batch-quote is not included in every FMP plan — a key without it gets
+402 on every call. That is reported once and the phase stops; the Stooq/Finnhub
+chain below carries the run.
 
 Everything here is best-effort and keyless-safe: with no FMP_API_KEY set the
 functions return {} and the existing Stooq/Finnhub/SEC chain carries on
@@ -39,6 +45,19 @@ FLOAT_URL = f"{BASE_URL}/shares-float"
 
 QUOTE_BATCH = 100      # symbols per batch-quote call
 PACE_S = 0.25          # courtesy pause between calls
+
+# A 429 is either a per-minute burst (worth waiting out) or a spent daily quota
+# (never recovers within a run). Retrying a bounded number of times handles the
+# first; abandoning the phase after that handles the second. The alternative —
+# sleeping per ticker — costs 20s × the whole float list, which is how a run
+# once spent 90 minutes in this module and was killed at the pipeline timeout.
+RATE_LIMIT_SLEEP_S = 5.0    # first back-off, doubled on each retry
+MAX_RATE_LIMIT_RETRIES = 3  # consecutive 429s on one call before giving up
+
+# Nothing about these improves by asking again with the same key: the plan does
+# not include the endpoint, or the key is rejected. Stop the phase on the first
+# one rather than repeating it once per batch.
+TERMINAL_STATUSES = frozenset({401, 402, 403})
 
 
 def api_key() -> str:
@@ -81,6 +100,94 @@ def _batches(items: List[str], size: int) -> Iterable[List[str]]:
         yield items[i:i + size]
 
 
+def _message(resp: "httpx.Response") -> str:
+    """FMP's own explanation, which is the only thing worth logging."""
+    try:
+        payload = resp.json()
+        if isinstance(payload, dict):
+            for k in ("Error Message", "error", "message"):
+                if payload.get(k):
+                    return str(payload[k])[:200]
+    except Exception:
+        pass
+    return resp.text[:200]
+
+
+class _Phase:
+    """Per-phase call bookkeeping.
+
+    `aborted` carries the reason FMP gave for stopping, so the caller can log
+    once, in full, at a level that survives LOG_LEVEL=INFO. The failure this
+    replaced logged its body at DEBUG, which meant a production run could emit
+    91 identical rejections without ever naming one.
+    """
+
+    def __init__(self, name: str):
+        self.name = name
+        self.errors = 0
+        self.aborted: Optional[str] = None
+        self._logged_error = False
+
+    def note_error(self, detail: str) -> None:
+        self.errors += 1
+        if not self._logged_error:
+            self._logged_error = True
+            logger.warning(f"FMP {self.name}: {detail}")
+        else:
+            logger.debug(f"FMP {self.name}: {detail}")
+
+
+def _get(client: "httpx.Client", url: str, params: Dict[str, Any],
+         phase: _Phase) -> Optional[Any]:
+    """One GET with bounded back-off; None when it produced no usable body.
+
+    Sets `phase.aborted` when FMP signals something that will not resolve
+    inside this run, so the caller stops calling instead of repeating it once
+    per ticker.
+    """
+    delay = RATE_LIMIT_SLEEP_S
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        try:
+            resp = client.get(url, params=params)
+        except Exception as e:
+            phase.note_error(f"request failed: {e}")
+            return None
+        # Pace here rather than in the callers: a `continue` past a courtesy
+        # sleep is how the old loops ended up firing batches back to back.
+        time.sleep(PACE_S)
+
+        if resp.status_code == 200:
+            try:
+                return resp.json()
+            except ValueError:
+                phase.note_error(f"non-JSON body: {resp.text[:200]}")
+                return None
+
+        if resp.status_code == 429:
+            if attempt >= MAX_RATE_LIMIT_RETRIES:
+                phase.aborted = (
+                    f"rate limited after {MAX_RATE_LIMIT_RETRIES} retries "
+                    f"— {_message(resp)}"
+                )
+                return None
+            logger.warning(
+                f"FMP 429 on {phase.name} — retry "
+                f"{attempt + 1}/{MAX_RATE_LIMIT_RETRIES} in {delay:.0f}s"
+            )
+            time.sleep(delay)
+            delay *= 2
+            continue
+
+        if resp.status_code in TERMINAL_STATUSES:
+            phase.aborted = f"HTTP {resp.status_code} — {_message(resp)}"
+            return None
+
+        phase.note_error(f"HTTP {resp.status_code}: {_message(resp)}")
+        return None
+
+    return None
+
+
 def fetch_fmp_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
     """Batched EOD quotes with real volume.
 
@@ -93,37 +200,34 @@ def fetch_fmp_quotes(tickers: List[str]) -> Dict[str, List[Dict[str, Any]]]:
         return results
 
     today = date.today()
-    errors = 0
+    phase = _Phase("batch-quote")
     batches = list(_batches([t.upper() for t in tickers], QUOTE_BATCH))
     logger.info(f"FMP quotes: {len(tickers)} tickers in {len(batches)} batched calls")
 
     with httpx.Client(timeout=30) as client:
         for batch in batches:
-            try:
-                resp = client.get(QUOTE_URL, params={"symbols": ",".join(batch), "apikey": key})
-                if resp.status_code == 429:
-                    logger.warning("FMP 429 — sleeping 20s")
-                    time.sleep(20)
-                    continue
-                if resp.status_code != 200:
-                    errors += 1
-                    logger.debug(f"FMP batch-quote {resp.status_code}: {resp.text[:200]}")
-                    continue
-                payload = resp.json()
-                if not isinstance(payload, list):
-                    errors += 1
-                    logger.debug(f"FMP batch-quote unexpected payload: {str(payload)[:200]}")
-                    continue
-                for row in payload:
-                    rec = _quote_record(row, today)
-                    if rec:
-                        results[rec["ticker"]] = [rec]
-            except Exception as e:
-                errors += 1
-                logger.debug(f"FMP batch-quote failed: {e}")
-            time.sleep(PACE_S)
+            payload = _get(client, QUOTE_URL,
+                           {"symbols": ",".join(batch), "apikey": key}, phase)
+            if phase.aborted:
+                break
+            if payload is None:
+                continue
+            if not isinstance(payload, list):
+                phase.note_error(f"unexpected payload: {str(payload)[:200]}")
+                continue
+            for row in payload:
+                rec = _quote_record(row, today)
+                if rec:
+                    results[rec["ticker"]] = [rec]
 
-    logger.info(f"FMP quotes: {len(results)}/{len(tickers)} tickers ({errors} errors)")
+    if phase.aborted:
+        logger.warning(
+            f"FMP quotes: abandoned after {phase.aborted}. "
+            f"Falling back to Yahoo/Stooq/Finnhub for the remaining tickers."
+        )
+    logger.info(
+        f"FMP quotes: {len(results)}/{len(tickers)} tickers ({phase.errors} errors)"
+    )
     return results
 
 
@@ -163,29 +267,28 @@ def fetch_fmp_market_caps(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
     if not key or not tickers:
         return results
 
+    phase = _Phase("batch-quote (market caps)")
     with httpx.Client(timeout=30) as client:
         for batch in _batches([t.upper() for t in tickers], QUOTE_BATCH):
-            try:
-                resp = client.get(QUOTE_URL, params={"symbols": ",".join(batch), "apikey": key})
-                if resp.status_code != 200:
+            payload = _get(client, QUOTE_URL,
+                           {"symbols": ",".join(batch), "apikey": key}, phase)
+            if phase.aborted:
+                break
+            if not isinstance(payload, list):
+                continue
+            for row in payload:
+                symbol = (row.get("symbol") or "").upper().strip()
+                mcap = _pick(row, "marketCap", "marketCapitalization")
+                if not symbol or not mcap:
                     continue
-                payload = resp.json()
-                if not isinstance(payload, list):
-                    continue
-                for row in payload:
-                    symbol = (row.get("symbol") or "").upper().strip()
-                    mcap = _pick(row, "marketCap", "marketCapitalization")
-                    if not symbol or not mcap:
-                        continue
-                    results[symbol] = {
-                        "market_cap": mcap,
-                        "shares_outstanding": _pick(row, "sharesOutstanding"),
-                        "company_name": row.get("name"),
-                    }
-            except Exception as e:
-                logger.debug(f"FMP market cap batch failed: {e}")
-            time.sleep(PACE_S)
+                results[symbol] = {
+                    "market_cap": mcap,
+                    "shares_outstanding": _pick(row, "sharesOutstanding"),
+                    "company_name": row.get("name"),
+                }
 
+    if phase.aborted:
+        logger.warning(f"FMP market caps: abandoned after {phase.aborted}")
     logger.info(f"FMP market caps: {len(results)}/{len(tickers)} tickers")
     return results
 
@@ -204,38 +307,40 @@ def fetch_fmp_float(tickers: List[str]) -> Dict[str, Dict[str, Any]]:
     todo = [t.upper() for t in tickers][:float_budget()]
     logger.info(f"FMP float: fetching {len(todo)} tickers")
 
-    errors = 0
+    phase = _Phase("shares-float")
+    attempted = 0
     with httpx.Client(timeout=30) as client:
         for ticker in todo:
-            try:
-                resp = client.get(FLOAT_URL, params={"symbol": ticker, "apikey": key})
-                if resp.status_code == 429:
-                    logger.warning("FMP 429 — sleeping 20s")
-                    time.sleep(20)
-                    continue
-                if resp.status_code != 200:
-                    errors += 1
-                    continue
-                payload = resp.json()
-                row = payload[0] if isinstance(payload, list) and payload else payload
-                if not isinstance(row, dict):
-                    continue
-                # Only a genuine share count counts as float. FMP's `freeFloat`
-                # is a percentage, and shares outstanding is a different number
-                # entirely — a tightly-held micro-cap's whole edge is that its
-                # float is far smaller. A wrong float is worse than none.
-                float_shares = _pick(row, "floatShares")
-                shares_out = _pick(row, "outstandingShares", "sharesOutstanding")
-                if not float_shares:
-                    continue
-                results[ticker] = {
-                    "float_shares": float_shares,
-                    "shares_outstanding": shares_out,
-                }
-            except Exception as e:
-                errors += 1
-                logger.debug(f"FMP float failed for {ticker}: {e}")
-            time.sleep(PACE_S)
+            payload = _get(client, FLOAT_URL,
+                           {"symbol": ticker, "apikey": key}, phase)
+            if phase.aborted:
+                break
+            attempted += 1
+            if payload is None:
+                continue
+            row = payload[0] if isinstance(payload, list) and payload else payload
+            if not isinstance(row, dict):
+                continue
+            # Only a genuine share count counts as float. FMP's `freeFloat`
+            # is a percentage, and shares outstanding is a different number
+            # entirely — a tightly-held micro-cap's whole edge is that its
+            # float is far smaller. A wrong float is worse than none.
+            float_shares = _pick(row, "floatShares")
+            shares_out = _pick(row, "outstandingShares", "sharesOutstanding")
+            if not float_shares:
+                continue
+            results[ticker] = {
+                "float_shares": float_shares,
+                "shares_outstanding": shares_out,
+            }
 
-    logger.info(f"FMP float: {len(results)}/{len(todo)} tickers ({errors} errors)")
+    if phase.aborted:
+        logger.warning(
+            f"FMP float: abandoned after {attempted}/{len(todo)} tickers "
+            f"— {phase.aborted}. Lens 4 runs on whatever float the other "
+            f"sources supplied."
+        )
+    logger.info(
+        f"FMP float: {len(results)}/{len(todo)} tickers ({phase.errors} errors)"
+    )
     return results
